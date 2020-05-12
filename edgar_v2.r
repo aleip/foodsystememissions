@@ -46,7 +46,9 @@ openEmissionFiles <- function(){
   AC <- as.data.table(read.xlsx(fileAC, startRow = 4))
   AC <- AC[FOOD_system_stage_detailed != "LULUC", part := "EDGAR_FOOD"]
   AC <- AC[FOOD_system_stage_detailed == "LULUC", part := "FAO_FOOD"]
-  
+ 
+  AC <- AC[! (Name=="China" & IPCC_for_std_report_detailed=="5")]
+   
   fileB <- paste0(edgar_folder, "item_B_nonfoodEDGAR_aggregated.csv")
   bdef <- paste0("# B = EDGAR Non-food system emissions")
   B <- fread(fileB)
@@ -65,7 +67,7 @@ openEmissionFiles <- function(){
   # Extract tables
   countrytable <- unique(AC[, .(Country_code_A3, Name, C_group_IM24_sh, dev_country)])
   categorytable <- unique(AC[, .(EDGAR_SECTOR, IPCC_for_std_report_detailed, IPCC_for_std_report_detailed_desc)])
-  AC <- AC[, .SD, .SDcols = setdiff(names(AC), c("IPCC_for_std_report_detailed", "IPCC_for_std_report_detailed_desc",
+  AC <- AC[, .SD, .SDcols = setdiff(names(AC), c("IPCC_for_std_report_detailed_desc",
                                                  "Name", "C_group_IM24_sh", "dev_country"))]
   
   # Melt all parts' years and 
@@ -83,12 +85,16 @@ openEmissionFiles <- function(){
                        EDGAR_SECTOR = "FOLU", # Attention here 'C' still included, needs to be subtracted later
                        FOOD_system_stage = "",
                        FOOD_system_stage_detailed = "",
-                       FOOD_system_compartment = "")] 
+                       FOOD_system_compartment = "",
+                       IPCC_for_std_report_detailed = "4")] 
   
   # bind all emission elements
   edgarfood <- rbind(ACm, BCDm)
   edgarfood <- edgarfood[, variable := as.numeric(gsub("Y_", "", variable))]
-  
+  edgarfood <- edgarfood[!is.na(value)]
+  setnames(edgarfood, 
+           c("FOOD_system_stage", "FOOD_system_stage_detailed", "FOOD_system_compartment", "IPCC_for_std_report_detailed"),
+           c("stage", "stagedet", "compartment", "ipcc"))
   
   years <- gsub("Y_", "", years)
   totemissions <- edgarfood[, sum(value, na.rm=TRUE), by=.(Country_code_A3, variable, part)]
@@ -176,7 +182,37 @@ calculateGlobalShares <- function(totemissions){
 }
 
 calculateStages <- function(curstages=emissions){
-  curstages <- dcast.data.table(emissions, Country_code_A3 + variable ~ part, value.var = 'value', fill=0)
+  
+  edgarfood <- edgarfood[value != 0]
+  devtable <- unique(countrytable[, .(Country_code_A3, dev_country)])
+  global <- merge(edgarfood, devtable, by="Country_code_A3")
+  globals <- global[, sum(value, na.rm=TRUE), by=.(variable, part, dev_country, stagedet)]
+  setnames(globals, "V1", "emissions")
+  globals <- globals[part=="EDGAR_nFOOD", stagedet := "EDGAR_nFOOD"]
+  globals <- globals[part=="FAO_total", stagedet := "FAO_total"]
+  
+  globald <- dcast.data.table(globals, variable + dev_country ~ stagedet, 
+                              value.var = "emissions", fill=0)
+  globald <- globald[, FAO_nFOOD := FAO_total - LULUC]
+  
+  globald <- globald[, .(dev_country, year=variable, LULUC, Production, Transport, Processing, Packaging, 
+                       Retail, Consumption, EoL=`End of Life`, EDGAR_nFOOD, FAO_nFOOD)]
+  globalt <- globald[, lapply(.SD, sum), by=.(year), .SDcols=setdiff(names(globald), c("dev_country", "year"))]
+  globalt$dev_country <- "G"
+  global <- rbind(globald, globalt)
+  
+  stagenames <- setdiff(names(global), c("year", "dev_country"))
+  stagesfood <- setdiff(stagenames, c("EDGAR_nFOOD", "FAO_nFOOD"))
+  stagesexcl <- setdiff(stagenames, c("LULUC", "FAO_nFOOD"))
+  global <- global[, TOT_incl := sum(.SD), by=1:nrow(global), .SDcols=stagenames]
+  global <- global[, TOT_excl := sum(.SD), by=1:nrow(global), .SDcols=stagesexcl]
+  global <- global[, TOT_FOOD := sum(.SD), by=1:nrow(global), .SDcols=stagesfood]
+  
+  sharestages <- copy(global)
+  sharestages <- sharestages[, (stagenames) := .SD/TOT_FOOD, .SDcols = stagenames, by=1:nrow(sharestages)]
+  
+  
+  
 }
 
 
