@@ -10,6 +10,11 @@ edgar_folder <- paste0(google, "edgar")
 edgar_folder <- paste0(google, "/projects/edgar/data/202005/")
 fao_folder <- paste0(google, "/projects/faostat_landuse/")
 
+addandwrite <- function(fx, shName, data){
+  addWorksheet(fx, sheetName = shName)
+  writeData(fx, sheet = shName, data)
+}
+
 openEmissionFiles <- function(){
   
   ##################################################################################################### 
@@ -181,41 +186,79 @@ calculateGlobalShares <- function(totemissions){
   return(alldata)
 }
 
-calculateStages <- function(curstages=emissions){
+calculateStages <- function(curstages=emissions, grouping='stagedet'){
   
   edgarfood <- edgarfood[value != 0]
-  devtable <- unique(countrytable[, .(Country_code_A3, dev_country)])
+  devtable <- unique(countrytable[, .(Country_code_A3, dev_country, C_group_IM24_sh)])
   global <- merge(edgarfood, devtable, by="Country_code_A3")
-  globals <- global[, sum(value, na.rm=TRUE), by=.(variable, part, dev_country, stagedet)]
-  setnames(globals, "V1", "emissions")
-  globals <- globals[part=="EDGAR_nFOOD", stagedet := "EDGAR_nFOOD"]
-  globals <- globals[part=="FAO_total", stagedet := "FAO_total"]
+  setnames(global, grouping, "grouping")
+  global <- global[part=="EDGAR_nFOOD", grouping := "EDGAR_nFOOD"]
+  global <- global[part=="FAO_total", grouping := "FAO_total"]
+  setnames(global, c("variable", "dev_country", "C_group_IM24_sh"), c("year", "region", "cgroup"))
   
-  globald <- dcast.data.table(globals, variable + dev_country ~ stagedet, 
-                              value.var = "emissions", fill=0)
-  globald <- globald[, FAO_nFOOD := FAO_total - LULUC]
+  globals <- global[, sum(value, na.rm=TRUE), by=.(year, part, region, grouping)]
+  globalr <- global[, sum(value, na.rm=TRUE), by=.(year, part, cgroup, grouping)]
+  setnames(globalr, "cgroup", "region")
+  globalt <- globals[, sum(V1, na.rm=TRUE), by=.(year, part, grouping)]
+  globalt$region <- "Global"
   
-  globald <- globald[, .(dev_country, year=variable, LULUC, Production, Transport, Processing, Packaging, 
-                       Retail, Consumption, EoL=`End of Life`, EDGAR_nFOOD, FAO_nFOOD)]
-  globalt <- globald[, lapply(.SD, sum), by=.(year), .SDcols=setdiff(names(globald), c("dev_country", "year"))]
-  globalt$dev_country <- "G"
-  global <- rbind(globald, globalt)
+  stages <- rbind(globals, rbind(globalr, globalt))
+  setnames(stages, "V1", "emissions")
   
-  stagenames <- setdiff(names(global), c("year", "dev_country"))
+  if(grouping == "compartment"){
+    stages <- stages[grouping == "Landbased", grouping := paste0("Landbased", substr(part, 1, 3))]
+  }
+  
+  stagesd <- dcast.data.table(stages, year + region ~ grouping, value.var = "emissions", fill=0)
+  
+  if(grouping == "stagedet"){
+    stagesd <- stagesd[, FAO_nFOOD := FAO_total - LULUC]
+    
+    stagesd <- stagesd[, .(region, year, LULUC, Production, Transport, Processing, Packaging, 
+                           Retail, Consumption, EoL=`End of Life`, EDGAR_nFOOD, FAO_nFOOD)]
+    
+  } else if (grouping == "compartment"){
+    stagesd <- stagesd[, FAO_nFOOD := FAO_total - LandbasedFAO]
+    stagesd <- stagesd[, .(region, year, LandbasedEDG, LandbasedFAO, Energy, Industry, Waste,
+                           EDGAR_nFOOD, FAO_nFOOD)]
+  }
+  stagenames <- setdiff(names(stagesd), c("year", "region"))
   stagesfood <- setdiff(stagenames, c("EDGAR_nFOOD", "FAO_nFOOD"))
-  stagesexcl <- setdiff(stagenames, c("LULUC", "FAO_nFOOD"))
-  global <- global[, TOT_incl := sum(.SD), by=1:nrow(global), .SDcols=stagenames]
-  global <- global[, TOT_excl := sum(.SD), by=1:nrow(global), .SDcols=stagesexcl]
-  global <- global[, TOT_FOOD := sum(.SD), by=1:nrow(global), .SDcols=stagesfood]
+  stagesexcl <- setdiff(stagenames, c("LULUC", "Landbased_FAO", "FAO_nFOOD"))
+  emByStage <- stagesd[, TOT_incl := sum(.SD), by=1:nrow(stagesd), .SDcols=stagenames]
+  emByStage <- stagesd[, TOT_excl := sum(.SD), by=1:nrow(stagesd), .SDcols=stagesexcl]
+  emByStage <- stagesd[, TOT_FOOD := sum(.SD), by=1:nrow(stagesd), .SDcols=stagesfood]
+  setkey(emByStage, region, year)
   
-  sharestages <- copy(global)
-  sharestages <- sharestages[, (stagenames) := .SD/TOT_FOOD, .SDcols = stagenames, by=1:nrow(sharestages)]
+  sharByStage <- copy(emByStage)
+  sharByStage <- sharByStage[, (stagenames) := .SD/TOT_FOOD, .SDcols = stagenames, by=1:nrow(sharByStage)]
   
+  groupname <- grouping
+  if(grouping == 'stagedet') {groupname <- "Stage"}
+  if(grouping == 'compartment') {
+    groupname <- "Comp"
+  }
+ 
+  fx <- createWorkbook()
+  addandwrite(fx, paste0("emBy", groupname, "_global"), emByStage[region=="Global"])
+  addandwrite(fx, paste0("emBy", groupname, "_dev"), emByStage[region%in%c("D", "I", "0")])
+  addandwrite(fx, paste0("emBy", groupname, "_groups"), emByStage[grepl("^[0-9][0-9]", region)])
+  addandwrite(fx, paste0("sharBy", groupname, "_global"), sharByStage[region=="Global"])
+  addandwrite(fx, paste0("sharBy", groupname, "_dev"), sharByStage[region%in%c("D", "I", "0")])
+  addandwrite(fx, paste0("sharBy", groupname, "_groups"), sharByStage[grepl("^[0-9][0-9]", region)])
   
+  assign(paste0("emBy", groupname), emByStage)
+  assign(paste0("sharBy", groupname), sharByStage)
+  resfile <- paste0(edgar_folder, "EDGAR-FOOD_", groupname, format(Sys.time(), "%Y%m%d"), ".rdata")
+  saveWorkbook(fx, file=gsub("rdata", "xlsx", resfile), overwrite = TRUE)
+  save(list = c(paste0("emBy", groupname), paste0("sharBy", groupname)), dev, ind, file=resfile)
+  
+  return(resfile)
   
 }
 
 
 load(openEmissionFiles())
 shares <- calculateGlobalShares(totemissions)
-
+load(calculateStages(edgarfood, "stagedet"))
+load(calculateStages(edgarfood, "compartment"))
