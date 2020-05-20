@@ -232,6 +232,10 @@ calculateStages <- function(curstages=emissions, grouping='stagedet'){
   
   sharByStage <- copy(emByStage)
   sharByStage <- sharByStage[, (stagenames) := .SD/TOT_FOOD, .SDcols = stagenames, by=1:nrow(sharByStage)]
+  if(grouping == "compartment"){
+    sharByStage <- sharByStage[, EnerOverLandEne := (Energy+Industry) / (LandbasedFAO + LandbasedEDG + Energy + Industry)]  
+    sharByStage <- sharByStage[, LandOverLandEne := (LandbasedFAO + LandbasedEDG) / (LandbasedFAO + LandbasedEDG + Energy + Industry)]  
+  }
   
   groupname <- grouping
   if(grouping == 'stagedet') {groupname <- "Stage"}
