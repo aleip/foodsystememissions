@@ -36,7 +36,7 @@ f.comb_unc <- function(unc.EF, unc.AD) {
 f.aggregate_subcategory <- function(
   emi,       # Numeric: Emission level
   unc,       # Numeric: Relative uncertainty. 
-  bCountry,  # Logical: Flag on correlation across countries
+  uncorr,  # Logical: Flag on correlation across countries
   xFlag      # Flag indicating biofuel/no biofuel. EDGAR-FOOD data don't have this flag.
   
 ){
@@ -62,37 +62,37 @@ f.aggregate_subcategory <- function(
   for (i in 1:length(unc)){
     if (is.na(emi[i]) | emi[i]==0.) {next()}
     # if(emi[i] !=0 & is.na(unc[i])) {cat(' check i= ', i, '\n'); unc[i] <- 0}# {unc[i] <- 0} # mmhhh
-    # #   if(b.cat=='Margatita' & now_run =='CO2') {bCountry[i] <- F}
-    # #     bCountry[i] <- F # sensitivity case to see the effect of having implemented the bCountry flag option
+    # #   if(b.cat=='Margatita' & now_run =='CO2') {uncorr[i] <- F}
+    # #     uncorr[i] <- F # sensitivity case to see the effect of having implemented the uncorr flag option
     if (!xFlag[i]){ #exclude all biofuels
-      if(bCountry[i]==T ){ #uncorrelated
+      if(uncorr[i]==T ){ #uncorrelated
         
         ## SUM squares thus (i) square unc so far, (ii) add new unc, (iii) square root
         unc.cat <- sqrt( unc.cat^2 + (emi[i]*unc[i])^2 )
         
-      } else if (bCountry[i]==F){ #correlated
+      } else if (uncorr[i]==F){ #correlated
         
         ## SUM standard deviations as for formula above
         unc.cat <- unc.cat + emi[i]*unc[i]
       }
-       
-    # if(emi[i] !=0 & is.na(unc[i])) {cat(' check i= ', i, '\n'); unc[i] <- 0}# {unc[i] <- 0} # mmhhh
-    # if (!xFlag[i]){ #exclude all biofuels
-    #     unc.cat <- unc.cat + sqrt((emi[i]*unc[i])^2)
-    #   } if (bCountry[i]==F){ #correlated
-    #     for(j in 1:length(unc)){
-    #       # All correlations in this section are 'mutual' thus no matrix needed
-    #       # Sum-up only for those which are flagged correlated
-    #       if(is.na(emi[j] | emi[j]==0. | i==j | bCountry[j]==T)){next()}
-    #       unc.cat <- unc.cat + (emi[i]*unc[i] + emi[j]*unc[j])
-    #     }
-    #   }
-       
+      
+      # if(emi[i] !=0 & is.na(unc[i])) {cat(' check i= ', i, '\n'); unc[i] <- 0}# {unc[i] <- 0} # mmhhh
+      # if (!xFlag[i]){ #exclude all biofuels
+      #     unc.cat <- unc.cat + sqrt((emi[i]*unc[i])^2)
+      #   } if (uncorr[i]==F){ #correlated
+      #     for(j in 1:length(unc)){
+      #       # All correlations in this section are 'mutual' thus no matrix needed
+      #       # Sum-up only for those which are flagged correlated
+      #       if(is.na(emi[j] | emi[j]==0. | i==j | uncorr[j]==T)){next()}
+      #       unc.cat <- unc.cat + (emi[i]*unc[i] + emi[j]*unc[j])
+      #     }
+      #   }
+      
     } else { # do the same for biofuels
-      if(bCountry[i]==T ){ #uncorrelated
+      if(uncorr[i]==TRUE ){ #uncorrelated
         unc.cat.x <- sqrt((emi[i]*unc[i])^2 + unc.cat.x^2)
         
-      } else if (bCountry[i]==F){ #correalted
+      } else if (uncorr[i]==FALSE){ #correalted
         unc.cat.x <- (emi[i]*unc[i])+ unc.cat.x
       }
     } 
@@ -175,7 +175,7 @@ f.asymmetric <- function(dtorig,
 }
 
 
-emissionSharesUncertainty <- function(dtorig, emi_old=NULL, isShare=TRUE, 
+emissionSharesUncertainty <- function(dtorig, emi_old=NULL, isShare=TRUE, remTerms = FALSE, 
                                       id1="food", country1="ALL", stage1="TOTAL", gas1="GHG", sector1="TOTAL",
                                       id2="food", country2="ALL", stage2="TOTAL", gas2="GHG", sector2="TOTAL"){
   # 
@@ -214,54 +214,75 @@ emissionSharesUncertainty <- function(dtorig, emi_old=NULL, isShare=TRUE,
   
   # Clean column names
   dt <- dt[, -c("emi.unc.lo", "emi.unc.up"), with=FALSE]
-  setnames(dt, "FOOD_system_stage_detailed", "stage")
-  emi1 <- dt[id==id1 & country==country1 & stage==stage1 & gas==gas1 & sector==sector1]
-  emi2 <- dt[id==id2 & country==country2 & stage==stage2 & gas==gas2 & sector==sector2]
+  emi1 <- dt[.id==id1 & country==country1 & stage==stage1 & gas==gas1 & sector==sector1]
+  emi2 <- dt[.id==id2 & country==country2 & stage==stage2 & gas==gas2 & sector==sector2]
   
-  # Check which one is the share of the other
-  correctOrder <- emi1$emi < emi2$emi
-  if(correctOrder){
-    setnames(emi1, names(emi1), paste0(names(emi1), "A"))
-    setnames(emi2, names(emi2), paste0(names(emi2), "AB"))
-  }else{
-    setnames(emi1, names(emi1), paste0(names(emi1), "AB"))
-    setnames(emi2, names(emi2), paste0(names(emi2), "A"))
-  }
- 
-  # Combine both 
-  emi <- cbind(emi1, emi2)
-  
-  # Calculate share
-  emi[, share := emiA / emiAB]
-  
-  # Determine uncertainty of the residual B
-  emi[, maxB := sqrt((maxAB*emiAB)^2 - (maxA*emiA)^2)/(emiAB-emiA)]
-  
-  if(isShare){
-    # A is a part of AB --> more complex calculation as emissions are correlated
+  # Only one of both exist --> add empty line
+  #                        --> calculations only if not
+  #cat(nrow(emi1) * nrow(emi2))
+  if(nrow(emi1) * nrow(emi2) > 0){
+    
+    # Check which one is the share of the other
+    correctOrder <- emi1$emi < emi2$emi
+    if(correctOrder){
+      setnames(emi1, names(emi1), paste0(names(emi1), "A"))
+      setnames(emi2, names(emi2), paste0(names(emi2), "AB"))
+    }else{
+      setnames(emi1, names(emi1), paste0(names(emi1), "AB"))
+      setnames(emi2, names(emi2), paste0(names(emi2), "A"))
+    }
+    
+    # Combine both 
+    emi <- cbind(emi1, emi2)
+    
+    # Calculate share
+    emi[, share := emiA / emiAB]
+    
+    # Determine uncertainty of the residual B
+    # max(0, ...) because the uncertainty of the total could be reduced
+    emi[, maxB := sqrt(max(0, (maxAB*emiAB)^2 - (maxA*emiA)^2))/(emiAB-emiA)]
+    emi[, minB := sqrt(max(0, (minAB*emiAB)^2 - (minA*emiA)^2))/(emiAB-emiA)]
+    
+    if(isShare){
+      # A is a part of AB --> more complex calculation as emissions are correlated
+      emi[, Term1 := 1/(emiAB)^2]
+      emi[, `:=` (
+        Term2max = emiA * ((emiAB-emiA) * maxB)*Term1,
+        Term2min = emiA * ((emiAB-emiA) * minB)*Term1,
+        Term3max = (emiAB-emiA) * (emiA * maxA)*Term1,
+        Term3min = (emiAB-emiA) * (emiA * minA)*Term1
+      )]
+      emi[, `:=` (
+        min = sqrt(Term2min^2 + Term3min^2),
+        max = sqrt(Term2max^2 + Term3max^2)
+      )]
+      
+    }else{
+      # A is not part of AB --> both emissions are uncorrelated
+      emi[, `:=` ( min = sqrt( (emiA * minA)^2 + (emiAB * minAB)^2)/emiAB,
+                   max = sqrt( (emiA * maxA)^2 + (emiAB * maxAB)^2)/emiAB)]
+    }
+    
+    # Calculate lower and upper bound of confidence intervall
     emi[, `:=` (
-      Term1 = 1/(emiAB)^2,
-      Term2 = emiA^2 * ((emiAB-emiA) * maxB)^2,
-      Term3 = (emiAB-emiA)^2 * (emiA * maxA)^2
-    )]
-    emi[, `:=` (
-      min = Term1 * sqrt(Term2 + Term3),
-      max = Term1 * sqrt(Term2 + Term3)
-    )]
+      share.unc.lo = share * (1 - min),
+      share.unc.up = share * (1 + max))]
+    # Additional restrictions under the assumption that emiA dominates the uncertainty:
+    #   --> in this case the upper limit is calculated from the assumption that 
+    #       emiA goes to max, but emiB remains constant
+    emi[share.unc.up > 1, 
+        share.unc.up := min(1, emiA * (1 + maxA)/
+          (emiAB + emiA * maxA - (emiAB-emiA) * maxB))]
+    if(! is.null(emi_old)){
+      emi <- rbind(emi_old, emi, fill = TRUE)
+    }
+    if(remTerms) emi <- emi[, -c("maxB", "minB", "Term1", "Term2min", "Term2max", "Term3min", "Term2max")]
+    #print(emi)
+    return(emi) 
   }else{
-    # A is not part of AB --> both emissions are uncorrelated
-    emi[, `:=` ( min = sqrt( (emiA * minA)^2 + (emiAB * minAB)^2)/emiAB,
-                 max = sqrt( (emiA * maxA)^2 + (emiAB * maxAB)^2)/emiAB)]
+    if(! is.null(emi_old)){
+      return(emi_old)
+    }
+    
   }
-  
-  # Calculate lower and upper bound of confidence intervall
-  emi[, `:=` (
-    share.unc.lo = share * (1 - min),
-    share.unc.up = share * (1 + max))]
-  
-  if(! is.null(emi_old)){
-    emi <- rbind(emi_old, emi)
-  }
-  
-  return(emi) 
 }

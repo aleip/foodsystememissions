@@ -33,6 +33,8 @@ f.loadfood <- function(doload=TRUE){
     unclulucffood.N2O <- fread(paste0(edgar_folder, "N2O_luluc_GWP100.csv"))
     unclulucffood.N2O$gas <- "N2O"
     unclulucffood <- rbind(unclulucffood.co2, rbind(unclulucffood.CH4, unclulucffood.N2O))
+    unclulucffood[, ipcc06 := "LULUCF"]
+    unclulucffood[, processes := "FOLU"]
     
     unc.table_foodshare <- unique(rbind(uncfood.co2, 
                                         uncfood.ch4, 
@@ -103,24 +105,24 @@ f.loadtotal <- function(doload=TRUE){
     # Load total FAO
     load(paste0(edgar_folder, "../202005/", "edgar_food_20200617.rdata"))
     lulucf <- edgarfood[variable==2015 & part=="FAO_total", 
-                        .(processes = EDGAR_SECTOR, ipcc06=4, ipccX = 4, 
+                        .(processes = EDGAR_SECTOR, ipcc06="LULUCF", ipccX = "LULCF", 
                           country = Country_code_A3, iFlag=FALSE, emi=value, 
                           unc.emi.min = value * 0.5, unc.emi.max = value * 1.5, 
                           unc.min = 0.5, unc.max = 0.5, gas=Substance, emio=value)]
     
-    unc.table <- unique(rbind(unc.co2, unc.ch4, unc.n2o, fgases, lulucf))
-    unc.table$xFlag <- F
+    unc.total <- unique(rbind(unc.co2, unc.ch4, unc.n2o, fgases, lulucf))
+    unc.total$xFlag <- F
     
     #Total GHG emissions
-    print(unc.table[, sum(emi, na.rm = TRUE), by=.(gas)])
-    print(unc.table[, sum(emi, na.rm = TRUE)])
+    print(unc.total[, sum(emi, na.rm = TRUE), by=.(gas)])
+    print(unc.total[, sum(emi, na.rm = TRUE)])
     
     SOD.total <- 53698292.3360208
-    print(1-unc.table[, sum(emi, na.rm = TRUE)]/SOD.total)
+    print(1-unc.total[, sum(emi, na.rm = TRUE)]/SOD.total)
     
     save(unc.co2, unc.ch4, unc.n2o, 
          fgases, lulucf, 
-         unc.table, file=file.totals)
+         unc.total, file=file.totals)
   }
   
   return(file.totals)
