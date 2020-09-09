@@ -108,34 +108,46 @@ gdb4plot <- gdb4plot[, .(location, val_all = `169`, val_BMI = `108`, val_child =
 
 gdb2edgar <- fread(file=paste0(edgar_folder, "regions/mapcountriesGBD_EDGAR.csv"))
 gdb4plot <- merge(gdb4plot, gdb2edgar[, .(`Location ID`, ISOcode)], by.x="location", by.y="Location ID", all.x=TRUE)
+
+
 gdb4plot <- gdb4plot[! is.na(ISOcode)]
 gdb4plot <- gdb4plot[ISOcode != "", -"location", with=FALSE]
 
 edgarcostgdb <- merge(edgarcost, gdb4plot[, .(countries=ISOcode, val_all, val_BMI, val_child, val_dietary)], by="countries", all.x = TRUE)
 
-edgarcostgdb_abs <- edgarcostgdb[, .(countries, region, dev, 
-                                     tot=Energy+Industry+Landbased+Waste,
-                                     land=Landbased,
-                                     energy=Energy+Industry,
-                                     pop, cost=pop*costPcap,
-                                     val_all_abs=pop*val_all,
-                                     val_BMI_abs=pop*val_BMI,
-                                     val_child_abs=pop*val_child,
-                                     val_dietary_abs=pop*val_dietary)]
+# Eliminate single counries
+
+ipccregions <- as.data.table(read.xlsx(xlsxFile = paste0(edgar_folder, "/regions/Country categories plus alpha codes.xlsx"), sheet = "Breakdown_list_dev_level"))
+edgarcostgdb_ipccreg <- merge(edgarcostgdb, ipccregions[, .(ISO, region_ar6_dev, region_ar6_10, region_ar6_22)], by.x = "countries", by.y="ISO")
+
+edgarcostgdb_abs <- edgarcostgdb_ipccreg[, .(countries, 
+                                             reg10=region_ar6_10, 
+                                             reg22=region_ar6_22, 
+                                             dev=region_ar6_dev, 
+                                             tot=Energy+Industry+Landbased+Waste,
+                                             land=Landbased,
+                                             energy=Energy+Industry,
+                                             pop, cost=pop*costPcap,
+                                             val_all_abs=pop*val_all,
+                                             val_BMI_abs=pop*val_BMI,
+                                             val_child_abs=pop*val_child,
+                                             val_dietary_abs=pop*val_dietary)]
 cols2sum <- c("tot", "land", "energy", "pop", "cost", "val_all_abs", "val_BMI_abs", "val_child_abs", "val_dietary_abs")
 e1 <- edgarcostgdb_abs[, lapply(.SD, sum, na.rm=TRUE), by=.(countries), .SDcols=cols2sum]
-e2 <- edgarcostgdb_abs[, lapply(.SD, sum, na.rm=TRUE), by=.(region), .SDcols=cols2sum]
-e3 <- edgarcostgdb_abs[, lapply(.SD, sum, na.rm=TRUE), by=.(dev), .SDcols=cols2sum]
+e2 <- edgarcostgdb_abs[, lapply(.SD, sum, na.rm=TRUE), by=.(reg10), .SDcols=cols2sum]
+e3 <- edgarcostgdb_abs[, lapply(.SD, sum, na.rm=TRUE), by=.(reg22), .SDcols=cols2sum]
+e4 <- edgarcostgdb_abs[, lapply(.SD, sum, na.rm=TRUE), by=.(dev), .SDcols=cols2sum]
 e1$scale <- "country"; setnames(e1, "countries", "reg")
-e2$scale <- "region"; setnames(e2, "region", "reg")
-e3$scale <- "development"; setnames(e3, "dev", "reg")
+e2$scale <- "reg10"; setnames(e2, "reg10", "reg")
+e3$scale <- "reg22"; setnames(e3, "reg22", "reg")
+e4$scale <- "development"; setnames(e4, "dev", "reg")
 
 e4plot <- rbind(e1, e2, e3)
 
 # Convert back to per capita data
 e4plot <- e4plot[, .(
   scale, reg, tot, land, energy, pop,
-
+  
   # Convert back to per capita data
   costPcap = cost/pop,
   val_all = val_all_abs/pop,
@@ -164,11 +176,11 @@ e4plot[, .(emismn = min(foodtCO2cap),
            emis50 = quantile(foodtCO2cap, 0.50),
            emis95 = quantile(foodtCO2cap, 0.95),
            emismx = max(foodtCO2cap),
-           sharmn = min(land2landenergy),
-           shar05 = quantile(land2landenergy, 0.05),
-           shar50 = quantile(land2landenergy, 0.50),
-           shar95 = quantile(land2landenergy, 0.95),
-           sharmx = max(land2landenergy),
+           sharmn = min(enind2landenind),
+           shar05 = quantile(enind2landenind, 0.05),
+           shar50 = quantile(enind2landenind, 0.50),
+           shar95 = quantile(enind2landenind, 0.95),
+           sharmx = max(enind2landenind),
            costmn = min(costPcap),
            cost05 = quantile(costPcap, 0.05),
            cost50 = quantile(costPcap, 0.50),
@@ -226,7 +238,8 @@ do.intensityplot <- function(dt, doprint=FALSE){
 
 pcounrty <- do.intensityplot(e4plot[scale=="country"], doprint = TRUE)
 pdev <- do.intensityplot(e4plot[scale=="development"], doprint = TRUE)
-preg <- do.intensityplot(e4plot[scale=="region"], doprint = FALSE)
+preg <- do.intensityplot(e4plot[scale=="reg22"], doprint = TRUE)
+preg <- do.intensityplot(e4plot[scale=="reg10"], doprint = TRUE)
 
 preg + geom_text(label=e4plot[scale=="region"][1:5]$reg, 
                  nudge_x = 0.0, 
