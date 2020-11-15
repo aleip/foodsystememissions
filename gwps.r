@@ -1,4 +1,4 @@
-gwp <- function(ar=6, gas=NULL){
+getgwp <- function(ar=6, gas=NULL){
   
   gases<-c("CH4bio", "CH4fos","CO2","N2O","Aggregate GHGs","NMVOC","PFCs","HFCs", "Unspecified mix of HFCs and PFCs")
   

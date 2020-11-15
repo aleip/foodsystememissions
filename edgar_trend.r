@@ -15,11 +15,11 @@ edgarfood[ipcc%in%c("7B1", "7C1"), sec:="sec1"]
 edgarfood[ipcc%in%c("7B2", "7C2"), sec:="sec2"]
 
 secdesc <- data.table(
-  secs = paste0("sec", 1:6),
+  secs = c(paste0("sec", 1:6), "other"),
   desc = c("Energy", "Industrial Processes", "Solvent and Other Product Use",
-           "Agriculture", "Land-Use Change & Forestry", "Waste"),
+           "Agriculture", "Land-Use Change & Forestry", "Waste", "Energy, Industry and Product Use"),
   dess = c("Energy", "Industry", "Product Use",
-           "Agriculture", "LUCF", "Waste")
+           "Agriculture", "LUCF", "Waste", "Energy+Industry")
 )
 
 foodglobal <- edgarfood[stage != "" , 
@@ -34,18 +34,27 @@ foodglobal <- edgarfood[stage != "" ,
 ##
 ##
 
-if(FALSE){
+if(TRUE){
+  
+  runp <- function(fooddt, suffx=""){
+    
+    plghg <- plotEmTrend(dt = fooddt, gas = "GHG", suffx = suffx)
+    
+    gases <- unique(foodglobal$Substance)[1:3]
+    for (g in gases){
+      foodglob <-dcast.data.table(foodglobal[stage!="" & Substance==g], 
+                                  variable ~ sec, value.var = "V1", sum)
+      g <- gsub("GWP_100_", "", g)
+      pl <- plotEmTrend(dt = fooddt, gas = g, suffx = suffx)
+    }
+    
+  }
   
   foodglob.bysec <-dcast.data.table(foodglobal[stage!=""], variable ~ sec, value.var = "V1", sum)
-  plghg <- plotEmTrend(dt = foodglob.bysec, gas = "GHG")
+  runp(foodglob.bysec)
   
-  gases <- unique(foodglobal$Substance)[1:3]
-  for (g in gases){
-    foodglob <-dcast.data.table(foodglobal[stage!="" & Substance==g], 
-                                variable ~ sec, value.var = "V1", sum)
-    g <- gsub("GWP_100_", "", g)
-    pl <- plotEmTrend(dt = foodglob, gas = g)
-  }
+  foodglob.bysecagg <- foodglob.bysec[, other := sec1 + sec2 + sec3][, .(variable, other, sec4, sec5, sec6)]
+  runp(foodglob.bysecagg, suffx = "agg")
 }
 
 ##

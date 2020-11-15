@@ -142,7 +142,7 @@ e2$scale <- "reg10"; setnames(e2, "reg10", "reg")
 e3$scale <- "reg22"; setnames(e3, "reg22", "reg")
 e4$scale <- "development"; setnames(e4, "dev", "reg")
 
-e4plot <- rbind(e1, e2, e3)
+e4plot <- rbind(e1, e2, e3, e4)
 
 # Convert back to per capita data
 e4plot <- e4plot[, .(

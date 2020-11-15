@@ -1,4 +1,4 @@
-plotEmTrend <- function(dt = foodglob.bysec, gas="GHG"){
+plotEmTrend <- function(dt = foodglob.bysec, gas="GHG", suffx = ""){
   
   dto <- copy(dt)
   
@@ -6,8 +6,8 @@ plotEmTrend <- function(dt = foodglob.bysec, gas="GHG"){
   years <- unique(dto$variable)
   nyears <- length(years)
   secs <- setdiff(names(dto), "variable")
-  secs <- intersect(c("sec4", "sec6", "sec1", "sec2", "sec3", "sec5"), secs)
-  sess <- intersect(c("Agriculture", "Waste", "Energy", "Industry", "Product Use", "LUCF"), 
+  secs <- intersect(c("sec4", "sec6", "sec1", "sec2", "sec3", "sec5", "other"), secs)
+  sess <- intersect(c("Agriculture", "Waste", "Energy", "Industry", "Product Use", "LUCF", "Energy+Industry"), 
                     secdesc$dess)
   nsecs <- length(secs)
   
@@ -87,7 +87,7 @@ plotEmTrend <- function(dt = foodglob.bysec, gas="GHG"){
   
   print(p3)
   
-  png(filename = paste0(edgar_plots, "emissions_by_sector", gas, "~", format(Sys.time(), "%Y%m%d%H"), ".png"), width=10000, height=5000, units="px", res=1000)
+  png(filename = paste0(edgar_plots, "emissions_by_sector", gas, suffx, "~", format(Sys.time(), "%Y%m%d%H"), ".png"), width=10000, height=5000, units="px", res=1000)
   print(p3)
   dev.off()
   
