@@ -10,6 +10,7 @@ manuscripts <- paste0(google, "../literature/manuscripts")
 edgar_folder <- paste0(google, "edgar")
 edgar_folder <- paste0(google, "/projects/edgar/data/202011/")
 fao_folder <- paste0(google, "/projects/faostat_landuse/")
+ipcc_folder <- paste0(google, "/projects/ipccwg3/xcutting/dms05report_data_energy_emissions/")
 
 source("../capriextract/f_tools.r")
 source("../foodsystememissions/gwps.r")
@@ -129,57 +130,40 @@ openEmissionFiles <- function(gwp='ar6'){
   
   
   # bind all emission elements
-  edgarfood <- rbind(edgarm, faom)
-  edgarfood <- edgarfood[, variable := as.numeric(gsub("Y_", "", variable))]
-  edgarfood <- edgarfood[!is.na(value)]
-  edgarfood <- edgarfood[value != 0]
-  setnames(edgarfood, 
-           c("FOOD_system_stage", "FOOD_system_stage_detailed", "FOOD_system_compartment", "IPCC_for_std_report_detailed"),
-           c("stage", "stagedet", "compartment", "ipcc"))
+  edgarfaodata <- rbind(edgarm, faom)
+  edgarfaodata <- edgarfaodata[, variable := as.numeric(gsub("Y_", "", variable))]
+  edgarfaodata <- edgarfaodata[!is.na(value)]
+  edgarfaodata <- edgarfaodata[value != 0]
+  edgarfaodata[, Substance := gsub("GWP_100_", "", Substance)]
+  setnames(edgarfaodata, 
+           c("Substance", "FOOD_system_stage", "FOOD_system_stage_detailed", "FOOD_system_compartment", "IPCC_for_std_report_detailed"),
+           c("gas", "stage", "stagedet", "compartment", "ipcc"))
  
-  ar5 <- getgwp(ar = 5)
-  ar6 <- getgwp(ar = 6)
-  gwps <- merge(ar5, ar6, by="gases") 
-   
-  ## Convert between AR5 and AR6 Global Warming potentials
-  edgarfood[, `:=` (ar5=1, ar6=1)]
-  edgarfood[Substance == "GWP_100_N2O", `:=` (ar5 = gwps[gases == "N2O"]$ar5, ar6 = gwps[gases == "N2O"]$ar6)]
-  edgarfood[Substance == "GWP_100_CH4", `:=` (ar5 = gwps[gases == "CH4fos"]$ar5, ar6 = gwps[gases == "CH4fos"]$ar6)]
-  # Agriculure and LULUCF emit biogenic methane
-  # Waste except burning
-  edgarfood[Substance == "GWP_100_CH4" 
-            & grepl("^[456]", ipcc), `:=` (ar5 = gwps[gases == "CH4bio"]$ar5, ar6 = gwps[gases == "CH4bio"]$ar6)]
-  # 
-  edgarfood[Substance == "GWP_100_CH4" 
-            & grepl("^6C", ipcc), `:=` (ar5 = gwps[gases == "CH4fos"]$ar5, ar6 = gwps[gases == "CH4fos"]$ar6)]
-  edgarfood[, ar6 := value / ar5 * ar6]
-  edgarfood[, ar5 := value]
-  edgarfood <- edgarfood[, -"value", with=FALSE]
-   
-  ## ADD TOTAL EDGAR V.4 EMISSIONS ###
-  # edgarv5 <- AB
-  # setnames(edgarv5, 
-  #          c("IPCC_for_std_report_detailed", "FOOD_system_stage", "FOOD_system_stage_detailed", "FOOD_system_compartment"),
-  #          c("ipcc", "stage", "stagedet", "compartment"))
-  # edgar5 <- melt.data.table(edgarv5, id.vars = c("Country_code_A3", "Substance", "ipcc", "stage", "compartment"), 
-  #                           measure.vars = years, na.rm = TRUE)
-  # edgar5 <- edgar5[, .(Country_code_A3, year=variable, sector=substr(ipcc, 1, 1), 
-  #                      stage, compartment, gas=gsub("GWP_100_", "", Substance), value=as.numeric(value))]
-  # edgar5 <- edgar5[!is.na(value)]
-  # edgar5[, year := as.numeric(gsub("Y_", "", year))]
-  # edgar5 <- edgar5[, sum(value, na.rm=TRUE), by=.(Country_code_A3, year, sector, stage, compartment, gas)]
-  # 
-  # edgar5tot <- edgar5[, sum(V1, na.rm=TRUE), by=year]
-  # edgar5gassec <- edgar5[, sum(V1, na.rm=TRUE), by=.(year, sector, gas)]
-  # edgar5gassec[gas %in% c("HFC-125", "HFC-134a", "HFC-143a", "HFC-32", "SF6"), gas := "F-gases"]
-  # edgar5gassec <- edgar5gassec[, sum(V1), by=.(year, sector, gas)]
-  # edgar5gassec <- dcast.data.table(edgar5gassec, year + sector ~ gas, value.var = "V1", fill = 0)
-  # edgar5gassectot <- edgar5gassec[, lapply(.SD, sum, na.rm=TRUE), .SDcols = c("CH4", "CO2", "F-gases", "N2O"), by=year]
-  # edgar5gassec <- rbind(edgar5gassec, edgar5gassectot[, sector:="total"])
-  # edgar5gassec <- edgar5gassec[, GHG := CH4 + CO2 + N2O + `F-gases`]
-  # setkey(edgar5gassec, year, sector)
-  # write.xlsx(edgar5gassec, file=paste0(edgar_folder, "edgar.v5_total_by_sector_gas.xlsx"))
   
+  # Load IPCC GWPs - EDGAR provided the data using AR5-GWP
+  # They need to be converted for AR6
+  ipccgwps <- data.table(read.xlsx(paste0(ipcc_folder, "GHG emissions data (100 yr GWPs).xlsx"), sheet = "100_yr_gwps"))
+  ipccgwpch4 <- data.table(read.xlsx(paste0(ipcc_folder, "GHG emissions data (100 yr GWPs).xlsx"), sheet = "CH4_gwps"))
+  ipccgwps[grepl("CH4", gas), gas := "CH4"]
+  ipccgwps <- ipccgwps[, .(gas, gwp_ar5, gwp_ar6)]
+  setnames(ipccgwpch4, "gwp_ar6", "gwp_ar6a")
+  gwpsch4 <- unique(ipccgwpch4[, .(gas, gwp_ar6a)])
+  
+  efood <- merge(edgarfaodata, ipccgwps, by="gas")
+  efood <- merge(efood, ipccgwpch4[, .(ipcc=sector_code, gwp_ar6a)], by="ipcc", all.x = TRUE)
+  efood[gas=="CH4", gwp_ar6 := gwp_ar6a]
+  efood[gas=="CH4" & ipcc=="5", gwp_ar6 := gwpsch4[gas=="CH4 Biogenic"]$gwp_ar6a]
+  # Waste incineration - other biogenic
+  efood[ipcc=="6Cb2x" & is.na(gwp_ar6), gwp_ar6 := gwpsch4[gas=="CH4 Biogenic"]$gwp_ar6a]
+  
+  if(nrow(unique(efood[is.na(gwp_ar6)])) != 0){stop("There are still AR6-GWPs undefined!")}
+  
+  ## Convert between AR5 and AR6 Global Warming potentials
+  efood[, ar5 := value]
+  efood[, emgas := value / gwp_ar5]
+  efood[, ar6 := emgas * gwp_ar6]
+  edgarfood <- efood[, -c("value", "gwp_ar6a"), with=FALSE]
+   
   fname <- paste0(edgar_folder, "edgar_food_", format(Sys.time(), "%Y%m%d"), ".rdata")
   save(edgarfood, countrytable, categorytable, gwps, file=fname)
   return(fname) 
@@ -210,7 +194,7 @@ calculateGlobalShares <- function(dt = edgarfood, gwp){
     totemissions[, sum(.SD, na.rm = TRUE), by=.(variable), .SDcols=foodsystemelements]
     return(totemissions)  
   }
-  totemissions <- calctot(edgarfood)
+  totemissions <- calctot(dt = curdt)
   
   alldata <- totemissions[, .(
     country=Country_code_A3, year=variable, 
@@ -375,10 +359,10 @@ Global_byGasPart <- function(curdt = edgarfood, gwp=ar6){
   edt[ipcc%in%c("7B1", "7C1"), sec:=1]
   edt[ipcc%in%c("7B2", "7C2"), sec:=2]
   
-  edt <- edt[, .(sec, sector, part, Country_code_A3, Substance, year=variable, value)]
+  edt <- edt[, .(sec, sector, part, Country_code_A3, gas, year=variable, value)]
   
   # Change names
-  em3sector <- edt[, .(year, sec, sector, part, Country_code_A3, gas=gsub("GWP_100_", "", Substance), value)]
+  em3sector <- edt[, .(year, sec, sector, part, Country_code_A3, gas, value)]
   em3sector <- em3sector[, sector := gsub(" \\(please specify\\)", "", sector)]
   em3sector <- em3sector[, sector := gsub(",", "", sector)]
   em3sector[grepl("F", gas), gas:="F-gases"]
@@ -471,11 +455,11 @@ IPCC_table <- function(curdt = edgarfood, gwp='ar6'){
 }
 
 
-recalcemissions <- TRUE
-doglobshares <- TRUE
-docalcstages <- TRUE
-docalcsector <- TRUE
-writeIPCCtable <- TRUE
+recalcemissions <- FALSE
+doglobshares <- FALSE
+docalcstages <- FALSE
+docalcsector <- FALSE
+writeIPCCtable <- FALSE
 
 if(recalcemissions){
   load(openEmissionFiles())
@@ -486,7 +470,7 @@ if(recalcemissions){
 }
 
 gwp <- "ar6"
-if(doglobshares) {load(calculateGlobalShares(edgarfood, gwp))}
+if(doglobshares) {load(calculateGlobalShares(dt = edgarfood, gwp = gwp))}
 if(docalcstages) {load(calculateStages(edgarfood, "stagedet", gwp))}
 if(docalcsector) {load(calculateStages(edgarfood, "compartment", gwp))}
 if(writeIPCCtable) {load(IPCC_table(edgarfood, gwp))}

@@ -1,11 +1,12 @@
 ### RUN edgar_v2 before to load data
 ### Make sure all logics are FALSE to not incidently recalculate
-source("edgar_v2.r")
+source("edgar_v3.r")
 source("p_edgar_trend.r")
 require(RColorBrewer)
 
 edgar_plots <- paste0(google, "projects/edgar/plots/")
 
+gwp <- "ar6"
 
 edgarfood[, cat := substr(ipcc, 1, 2)]
 edgarfood[, sec := paste0("sec", substr(ipcc, 1, 1))]
@@ -22,9 +23,14 @@ secdesc <- data.table(
            "Agriculture", "LUCF", "Waste", "Energy+Industry")
 )
 
-foodglobal <- edgarfood[stage != "" , 
-                        sum(value, na.rm = TRUE), 
-                        by = .(Substance, sec, cat, stage, stagedet, compartment, part, variable)]
+# Use correct GWPs and convert 
+edgarf <- copy(edgarfood)
+edgarf[, value := .SD, .SDcol = gwp]
+
+foodglobal <- edgarf[stage != "" , 
+                        lapply(.SD, sum, na.rm = TRUE), 
+                        by = .(gas, sec, cat, stage, stagedet, compartment, part, variable),
+                        .SDcols = c("value", "emgas")]
 
 ##
 ##
@@ -36,25 +42,31 @@ foodglobal <- edgarfood[stage != "" ,
 
 if(TRUE){
   
-  runp <- function(fooddt, suffx=""){
+  runp <- function(fooddt = foodglobal, suffx="", singleplot=TRUE){
     
-    plghg <- plotEmTrend(dt = fooddt, gas = "GHG", suffx = suffx)
+    foodglob <- dcast.data.table(fooddt[stage!=""], variable ~ sec, value.var = c("value"), sum)
+    plghg <- plotEmTrend(dt = foodglob, gas = "GHG", suffx = suffx, singleplot)
     
-    gases <- unique(foodglobal$Substance)[1:3]
+    
+    gases <- unique(foodglobal$gas)[1:3]
     for (g in gases){
-      foodglob <-dcast.data.table(foodglobal[stage!="" & Substance==g], 
-                                  variable ~ sec, value.var = "V1", sum)
+      foodglob <-dcast.data.table(fooddt[stage!="" & gas==g], variable ~ sec, value.var = "emgas", sum)
       g <- gsub("GWP_100_", "", g)
-      pl <- plotEmTrend(dt = fooddt, gas = g, suffx = suffx)
+      pl <- plotEmTrend(dt = foodglob, gas = g, suffx = suffx, singleplot)
     }
     
   }
   
-  foodglob.bysec <-dcast.data.table(foodglobal[stage!=""], variable ~ sec, value.var = "V1", sum)
-  runp(foodglob.bysec)
+  runp(foodglobal, singleplot=TRUE)
   
-  foodglob.bysecagg <- foodglob.bysec[, other := sec1 + sec2 + sec3][, .(variable, other, sec4, sec5, sec6)]
-  runp(foodglob.bysecagg, suffx = "agg")
+  foodglobagg <- copy(foodglobal)
+  foodglobagg[, secagg := sec]
+  foodglobagg[sec %in% c("sec1", "sec2", "sec3"), secagg := "other"]
+  foodglobagg <- foodglobagg[, lapply(.SD, sum), by=setdiff(names(foodglobagg), c("sec", "value", "emgas")), .SDcols=c("value", "emgas")]
+  setnames(foodglobagg, "secagg", "sec")
+  
+  runp(foodglobagg, suffx = "agg", singleplot = FALSE)
+  
 }
 
 ##
