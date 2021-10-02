@@ -29,8 +29,10 @@ gwpn2o <- 265  # 265 GWP of IPCC-AR5 for N2O
 if(Sys.info()[4]=="D01RI1600881"){ myuser <- "leipadr" }
 myuser <- Sys.info()[6]
 google <- paste0("C:/Users/", myuser, "/google/")
+jrcbox <- paste0("C:/Users/", myuser, "/ownCloud/")
 manuscripts <- paste0(google, "../literature/manuscripts")
-edgar_folder <- paste0(google, "/projects/edgar/data/202006_unc/")
+edgar_folder <- paste0(jrcbox, "EDGAR-FOOD/202108/")
+edgar_uncfolder <- paste0(jrcbox, "EDGAR-FOOD/202006_unc/")
 
 if(FALSE) extractEDGARprocesses(unc.table)
 

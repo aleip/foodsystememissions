@@ -100,7 +100,9 @@ edgarex <- dcast.data.table(edgarfood[variable==2015 & compartment != "",
 #edgarex <- merge(edgarex, countrytable[, .(countries = Country_code_A3, region=C_group_IM24_sh, dev=dev_country)])
 # EDGAR has combined Serbia and Montenegro (SCG)
 # --> use Serbia as proxy
+# Update TSU 20201201 - Keep Serbia only and delete 'Serbia and Montenegro' ==> consistent with this approach
 ipccreg[countries=="SRB", countries := "SCG"]
+write.xlsx(ipccreg, file = gsub(".xlsx", "_ipccreg.xlsx", ipcc_file))
 edgarex <- merge(edgarex, ipccreg, by="countries")
 edgarex <- edgarex[! is.na(dev)]
 

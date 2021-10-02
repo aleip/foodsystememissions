@@ -1,3 +1,5 @@
+# These functions load historical uncertainty table & extract relative uncertainties
+
 f.loadfood <- function(doload=TRUE){
   
   file.foodshare <- paste0(edgar_folder, "unc.table_food.rdata")
@@ -5,19 +7,19 @@ f.loadfood <- function(doload=TRUE){
   if(doload){
     
     # Load data for food system emissions
-    load(paste0(edgar_folder, "CO2_UncCorr_2015_unc.table_food_share.Rdata"))
+    load(paste0(edgar_uncfolder, "CO2_UncCorr_2015_unc.table_food_share.Rdata"))
     uncfood.co2 <- as.data.table(unc.table); rm(unc.table)
     uncfood.co2$gas <- "CO2"
-    load(paste0(edgar_folder, "ch4_UncCorr_2015_unc.table_food_share.Rdata"))
+    load(paste0(edgar_uncfolder, "ch4_UncCorr_2015_unc.table_food_share.Rdata"))
     uncfood.ch4 <- as.data.table(unc.table); rm(unc.table)
     uncfood.ch4$gas <- "CH4"
     uncfood.ch4[, emi := emi * gwpch4] #GWP of IPCC-AR5 for CH4
-    load(paste0(edgar_folder, "n2o_UncCorr_2015_unc.table_food_share.Rdata"))
+    load(paste0(edgar_uncfolder, "n2o_UncCorr_2015_unc.table_food_share.Rdata"))
     uncfood.n2o <- as.data.table(unc.table); rm(unc.table)
     uncfood.n2o$gas <- "N2O"
     uncfood.n2o[, emi := emi * gwpn2o] #GWP of IPCC-AR5 for N2O
     
-    uncfood.f <- fread(paste0(edgar_folder, "F-gases_unc.table_food.csv"))
+    uncfood.f <- fread(paste0(edgar_uncfolder, "F-gases_unc.table_food.csv"))
     uncfood.f <- uncfood.f[, -c(names(uncfood.f)[grepl("^V", names(uncfood.f))], "EDGAR_Sector", "GHGs"), with=FALSE]
     setnames(uncfood.f, 
              c("IPCC06", "Country_code_A3", "iFLAG"), 
@@ -26,11 +28,11 @@ f.loadfood <- function(doload=TRUE){
     uncfood.f[, emi := as.numeric(emi)]
     
     ## Load LULUCF data
-    unclulucffood.co2 <- fread(paste0(edgar_folder, "CO2_luluc_GWP100.csv"))
+    unclulucffood.co2 <- fread(paste0(edgar_uncfolder, "CO2_luluc_GWP100.csv"))
     unclulucffood.co2$gas <- "CO2"
-    unclulucffood.CH4 <- fread(paste0(edgar_folder, "CH4_luluc_GWP100.csv"))
+    unclulucffood.CH4 <- fread(paste0(edgar_uncfolder, "CH4_luluc_GWP100.csv"))
     unclulucffood.CH4$gas <- "CH4"
-    unclulucffood.N2O <- fread(paste0(edgar_folder, "N2O_luluc_GWP100.csv"))
+    unclulucffood.N2O <- fread(paste0(edgar_uncfolder, "N2O_luluc_GWP100.csv"))
     unclulucffood.N2O$gas <- "N2O"
     unclulucffood <- rbind(unclulucffood.co2, rbind(unclulucffood.CH4, unclulucffood.N2O))
     unclulucffood[, ipcc06 := "LULUCF"]
@@ -68,19 +70,19 @@ f.loadtotal <- function(doload=TRUE){
   
   if(doload){
     
-    load(paste0(edgar_folder, "CO2_EDGAR_UncCorr_2015_unc.table.Rdata"))
+    load(paste0(edgar_uncfolder, "CO2_EDGAR_UncCorr_2015_unc.table.Rdata"))
     unc.co2 <- as.data.table(unc.table); rm(unc.table)
     unc.co2[, emio := emi] #GWP of IPCC-AR5 for CH4
     unc.co2$gas <- "CO2"
     
     ch4corr <- 25
-    load(paste0(edgar_folder, "CH4_EDGAR_UncCorr_2015_unc.table.Rdata"))
+    load(paste0(edgar_uncfolder, "CH4_EDGAR_UncCorr_2015_unc.table.Rdata"))
     unc.ch4 <- as.data.table(unc.table); rm(unc.table)
     unc.ch4$gas <- "CH4"
     unc.ch4[, emio := emi] #GWP of IPCC-AR5 for CH4
     unc.ch4[, emi := emi * gwpch4 / ch4corr] #GWP of IPCC-AR5 for CH4
     
-    load(paste0(edgar_folder, "N2O_EDGAR_UncCorr_2015_unc.table.Rdata"))
+    load(paste0(edgar_uncfolder, "N2O_EDGAR_UncCorr_2015_unc.table.Rdata"))
     n2ocorr <- 298
     unc.n2o <- as.data.table(unc.table); rm(unc.table)
     unc.n2o$gas <- "N2O"
@@ -88,7 +90,7 @@ f.loadtotal <- function(doload=TRUE){
     unc.n2o[, emi := emi * gwpn2o / n2ocorr] #GWP of IPCC-AR5 for N2O
     
     #F-gases
-    fgases <- fread(paste0(edgar_folder, "f_gases_EDGAR_total_AR5.csv"))
+    fgases <- fread(paste0(edgar_uncfolder, "f_gases_EDGAR_total_AR5.csv"))
     fgases[, emi := gsub("NULL", "0", emi)]
     fgases[, emi := as.numeric(emi)]
     fgases <- fgases[, -c("name", "IPCC96", "Edgar process")]
@@ -128,3 +130,23 @@ f.loadtotal <- function(doload=TRUE){
   return(file.totals)
   
 }
+
+load(f.loadfood(doload = do.importfood)) #FALSE to reload rdata file, TRUE to load from EDGAR exports
+load(f.loadtotal(doload = do.importtotal))
+
+unc.total <- unc.total[! is.na(emi), .(processes, gas, ipcc06, ipccX, country, unc.min, unc.max, iFlag, xFlag)]
+unc.foodshare <- unc.table_foodshare[! is.na(emi), .(processes, gas, ipcc06, ipccX, country, unc.min, unc.max, iFlag, xFlag)]
+unc.total$unc <- "TOTAL"
+unc.foodshare$unc <- "FOOD"
+unc <- rbind(unc.total, unc.foodshare)
+unc <- unique(unc[! is.na(processes)])
+unc <- dcast.data.table(unc, processes+gas+ipcc06+ipccX+country+iFlag+xFlag~unc, value.var = c("unc.min", "unc.max"))
+
+# Check that not all relative uncertainties are identical
+#unc[, rat_min := unc.min_TOTAL/unc.min_FOOD][, rat_max := unc.max_TOTAL/unc.max_FOOD]
+
+toload <- paste0(edgar_folder, scan(paste0(edgar_folder, "/edgar_food_last.txt"), what = "character"))
+load(toload)
+
+
+
