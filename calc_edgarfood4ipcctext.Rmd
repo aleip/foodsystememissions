@@ -1,0 +1,377 @@
+---
+title: "IPCC Chapter 12.4 and TS - values derived from EDGAR-FOOD"
+output: html_document
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(data.table)
+require(openxlsx)
+require(ggplot2)
+require(dplyr)
+
+rm(list=ls())
+
+if(Sys.info()[4]=="D01RI1600881"){ myuser <- "leipadr" }
+myuser <- Sys.info()[6]
+google <- paste0("C:/Users/", myuser, "/google/")
+jrcbox <- paste0("C:/Users/", myuser, "/ownCloud/")
+manuscripts <- paste0(google, "../literature/manuscripts")
+edgar_folder <- paste0(google, "edgar")
+edgar_folder2020 <- paste0(jrcbox, "EDGAR-FOOD/202011/")
+edgar_folder <- paste0(jrcbox, "EDGAR-FOOD/202108/")
+edgar_input <- paste0(edgar_folder, "input_edgar/")
+fao_folder <- paste0(google, "/projects/faostat_landuse/")
+fao_folder <- edgar_folder
+ipcc_folder <- paste0(google, "/projects/ipccwg3/xcutting/dms05report_data_energy_emissions/")
+
+last <- paste0(edgar_folder, scan(paste0(edgar_folder, "/edgar_food_last.txt"), what = "character"))
+if(! exists("edgarfood")) {load(last)}
+load(gsub("edgar_food", "EDGAR-FOOD_by_globalshares_ar6", last))
+load(gsub("edgar_food", "IPCC_table_ar6", last))
+load(gsub("edgar_food", "tables", last))
+write.xlsx(unique(categorytable[, .(IPCC_for_std_report_detailed, IPCC_for_std_report_detailed_desc)][order(IPCC_for_std_report_detailed)]), 
+                  file = gsub("rdata", "xlsx", gsub("edgar_food", "categorytable", last)))
+if(! exists("ipcc")) {ipcc <- as.data.table(read.xlsx(xlsxFile = paste0(edgar_folder, "ipcc_ar6_data_edgar6_all_gases_gwp100.xlsx"), sheet = "data"))}
+```
+
+## Technical Summary
+```{r TSglobal}
+## Food systems currently contributed some 25-41% to global greenhouse gas (GHG) emissions in 2018
+## ==> Calculated by Efisio, see email 20211007
+## 
+sely <- c(1990, 2000, 2015, 2018)
+## While the share of global GHG emissions from the food systems has decreased since 1990, the absolute emissions increased from 14 to 16 TgCO2eq per year during the period 1990 to 2018
+global[year %in% sely, .(year, Foodtotal=Foodtotal/1000000, shareIncLULUCF)]
+```
+```{r TSind}
+## In industrialized countries, emissions decreased from 5.5 to 4.5 Tg CO2eq, 
+## while the share of food system emissions increased slightly from 23 to 24 %.
+ind[year %in% sely, .(year, Foodtotal=Foodtotal/1000000, shareIncLULUCF)]
+
+
+```
+```{r TSdev}
+## In developing countries, emissions increased from 10 to 12 TgCO2eq 
+## with share on total emissions decreasing from 65 to 35 %.  
+dev[year %in% sely, .(year, Foodtotal=Foodtotal/1000000, shareIncLULUCF)]
+
+```
+```{r TSpercap}
+## The global average per capita emissions from food systems decreased from 2.7 to 2.2 t CO2eq per annum. 
+popglob <- ipcc[, .(population=mean(population, na.rm = TRUE)), by=.(ISO, year)][, .(population=sum(population, na.rm = TRUE)), by=.(year)]
+merge(global[year %in% sely, .(year, Foodtotal=Foodtotal)], popglob[year %in% c(1990, 2018)], by="year")[, tCO2eq_per_cap := (Foodtotal*1000) / population][]
+ 
+
+```
+```{r TScontrib}
+## CO2 emissions remained stable at about 7.5 Tg CO2eq per year 
+## with decreasing emissions from land use change, 
+## but strongly increasing emissions from energy use, and increasing emissions from CH4 and N2O. 
+dcast.data.table(edgarfood[Year %in% sely & part %in% c("EDGAR_FOOD", "FAO_FOOD"), .(ktCO2eq=sum(ktCO2eq)), by=.(gas, Year)], Year ~ gas, value.var = "ktCO2eq")
+dcast.data.table(edgarfood[Year %in% sely & part %in% c("EDGAR_FOOD", "FAO_FOOD"), .(ktCO2eq=sum(ktCO2eq)), by=.(compartment, Year)], Year ~ compartment, value.var = "ktCO2eq")
+dcast.data.table(edgarfood[Year %in% sely & part %in% c("EDGAR_FOOD", "FAO_FOOD"), .(ktCO2eq=sum(ktCO2eq)), by=.(stage, Year)], Year ~ stage, value.var = "ktCO2eq")
+dcast.data.table(edgarfood[Year %in% sely & part %in% c("EDGAR_FOOD", "FAO_FOOD"), .(ktCO2eq=sum(ktCO2eq)), by=.(stagedet, Year)], Year ~ stagedet, value.var = "ktCO2eq")
+```
+
+## Section 12.4.2.1
+
+
+
+New calculations with EDGAR.v6 (Crippa et al. 2021a) and FAOSTAT (FAO 2021) data bases providing territorial-based food system GHG emissions by country globally for the time period 1990-2018, calculated with the methodologies developed by Crippa et al. (2021b) and Tubiello et al. (2021), have shown that, in 2018, **16 GtCO2-eq yr-1** (95% confidence range **13-20** GtCO2-eq yr-1) were associated with the production, processing, distribution, consumption of food or management of food system residues, corresponding to **31%** of total anthropogenic GHG emissions of **53.2** GtCO2-eq yr-1 (range 24-38%).
+
+
+```{r Edgar_emrange}
+
+## Uncertainty range calculated by Efisio Solazzo (email 20211007)
+unc.min <- -23.1
+unc.max <- +24.4
+
+emrange <- global[year %in% c(1990, 2015, 2018), .(year, Foodtotal=round(Foodtotal/1000000, 1), 
+                                                   Total=round(Total/1000000, 1), 
+                                                   sh = round(100* shareIncLULUCF, 1),
+                                                   rglow = round(Foodtotal * (1 + unc.min/100)/1000000, 0),
+                                                   rghig = round(Foodtotal * (1 + unc.max/100)/1000000, 0),
+                                                   shlow = round(100 * Foodtotal * (1 + unc.min/100)/Total, 0),
+                                                   shhig = round(100 * Foodtotal * (1 + unc.max/100)/Total, 0))][]
+emrange
+
+```
+
+
+Based in IPCC sectoral classification (see Table 12.7 and Figure 12.7), the largest contribution of food systems GHG emissions in 2018 was from agriculture, i.e. in livestock and crop production systems (6.2 GtCO2-eq yr-1, range 2.1-10.8) and land use, land use share and forestry (4.0 GtCO2-eq yr-1 (2.9-8.5) (Figure 12.7). Emissions from energy use was 3.9 GtCO2-eq yr-1 (3.5-4.2), waste management 1.7 GtCO2-eq yr-1 (0.9-2.6), and industrial processes and product use 0.5 GtCO2-eq yr-1 (0.5-0.9). The share of GHG emissions from food system generated outside the AFOLU (agriculture and land use, land-use change and forestry) sectors has increased over the last decades, from 28% in 1990 to 37% in 2018 
+
+** ATTENTION !!! ** RANGES NOT YET CALCULATED
+
+** ATTENTION !!! ** WHAT EXACTLY IS SEEN IN CHAPTER 7??
+
+
+
+```{r Edgar_ipcc}
+
+agri <- ipcctable[grepl("^[45]", sector) & unit=="ktCO2eq", sum(GHG, na.rm = TRUE), by=.(year)]
+nonagri <- ipcctable[!grepl("^[45]", sector) & sector != "Total" & unit=="ktCO2eq", sum(GHG, na.rm = TRUE), by=.(year)]
+total <- ipcctable[sector == "Total" & unit=="ktCO2eq", sum(GHG, na.rm = TRUE), by=.(year)]
+both <- merge(nonagri[, .(year, nonagri=V1)], total[, .(year, total=V1)], by="year")[, share := nonagri/total]
+
+both[]
+
+dcast.data.table(ipcctable[year==2018 & unit=="ktgas", .(CH4, GHG), by=.(unit, sector)], sector ~ unit, value.var = c("CH4", "GHG"))
+
+```
+
+
+## Create database for details in the text
+```{r Edgar_energy}
+edgars <- edgarfood[, sector := substr(ipcc, 1, 1)]
+edgars[, food := ifelse(part %in% c("EDGAR_FOOD", "FAO_FOOD"), "food", 
+                        ifelse(part %in% c("EDGAR_nFOOD", "FAO_nFOOD"), "nfood",
+                               ifelse(part %in% c("EDGAR_total", "FAO_total"), "total","")))]
+edgarsec <- edgars[food != "" & Year %in% sely, lapply(.SD, sum, na.rm=TRUE), .SDcols=c("ktCO2eq", "ktgas"), by= .(Year, gas, ipcc, sector, food)]
+edgarsec[, `:=` (Gtgas= ktgas/1000000, GtCO2eq=ktCO2eq/1000000)]
+globdetails <- melt.data.table(edgarsec, id.vars = c("Year", "gas", "ipcc", "sector", "food"), measure.vars = c("GtCO2eq", "Gtgas"), variable.name = "unit")
+globdetails <- dcast.data.table(globdetails, Year + ipcc + gas + unit ~ food, value.var = c("value"))
+sely <- c(2018)
+sdcols <- c("food", "nfood", "total")
+indsector <- function(globdetails = globdetails, sect){
+  
+  gg <- copy(globdetails)
+  detsector <- gg[grepl(paste0("^", sect), ipcc) & Year %in% sely, lapply(.SD, sum, na.rm=TRUE), .SDcols=sdcols, by=.(Year, gas, unit)]
+  manutot <- detsector[unit=="GtCO2eq", lapply(.SD, sum, na.rm=TRUE), .SDcols=sdcols, by=.(Year)]
+  manutot[, `:=` (unit="GtCO2eq", gas="GHG")]
+  detsector <- rbind(detsector, manutot)
+  detsector <- detsector[, share := food / total]
+  detsector[unit=="GtCO2eq", `:=` (food=round(food, 3), nfood=round(nfood, 3), total=round(total, 3), share=round(100*share, 0))]
+  
+  return(detsector)
+}
+
+```
+
+
+## Calculate Shares by gas
+```{r Sharebyx}
+glob4share <- copy(globdetails)
+
+cat4share <- copy(glob4share)
+indcat <- cat4share[unit=="GtCO2eq" & Year==2018]
+indcat <- indcat[, cat := substr(ipcc, 1, 4)]
+calct <- indcat[! is.na(food), sum(food), by=.(gas, cat)]
+calcto <- calct[, sum(V1), by="cat"]
+allg <- unique(calct$gas)
+sharegas4 <- dcast.data.table(indcat[! is.na(food), sum(food), by=.(gas, cat)], cat ~ gas, value.var = "V1", fill=0)
+sharegas4 <- merge(sharegas4, calcto[, .(cat, total=V1)], by="cat")
+sharegas4 <- sharegas4[, (allg) := .SD/total, .SDcols=allg]
+sharegas4[, (allg) := round(.SD *100, 0), .SDcols=allg]
+
+cat4share <- copy(glob4share)
+indcat <- cat4share[unit=="GtCO2eq" & Year==2018]
+indcat <- indcat[, cat := substr(ipcc, 1, 3)]
+calct <- indcat[! is.na(food), sum(food), by=.(gas, cat)]
+calcto <- calct[, sum(V1), by="cat"]
+allg <- unique(calct$gas)
+sharegas3 <- dcast.data.table(indcat[! is.na(food), sum(food), by=.(gas, cat)], cat ~ gas, value.var = "V1", fill=0)
+sharegas3 <- merge(sharegas3, calcto[, .(cat, total=V1)], by="cat")
+sharegas3 <- sharegas3[, (allg) := .SD/total, .SDcols=allg]
+sharegas3[, (allg) := round(.SD *100, 0), .SDcols=allg]
+
+cat4share <- copy(glob4share)
+indcat <- cat4share[unit=="GtCO2eq" & Year==2018]
+indcat <- indcat[, cat := substr(ipcc, 1, 2)]
+calct <- indcat[! is.na(food), sum(food), by=.(gas, cat)]
+calcto <- calct[, sum(V1), by="cat"]
+allg <- unique(calct$gas)
+sharegas2 <- dcast.data.table(indcat[! is.na(food), sum(food), by=.(gas, cat)], cat ~ gas, value.var = "V1", fill=0)
+sharegas2 <- merge(sharegas2, calcto[, .(cat, total=V1)], by="cat")
+sharegas2 <- sharegas2[, (allg) := .SD/total, .SDcols=allg]
+sharegas2[, (allg) := round(.SD *100, 0), .SDcols=allg]
+
+cat4share <- copy(glob4share)
+indcat <- cat4share[unit=="GtCO2eq" & Year==2018]
+indcat <- indcat[, cat := substr(ipcc, 1, 1)]
+calct <- indcat[! is.na(food), sum(food), by=.(gas, cat)]
+calcto <- calct[, sum(V1), by="cat"]
+allg <- unique(calct$gas)
+sharegas1 <- dcast.data.table(indcat[! is.na(food), sum(food), by=.(gas, cat)], cat ~ gas, value.var = "V1", fill=0)
+sharegas1 <- merge(sharegas1, calcto[, .(cat, total=V1)], by="cat")
+sharegas1 <- sharegas1[, (allg) := .SD/total, .SDcols=allg]
+sharegas1[, (allg) := round(.SD *100, 0), .SDcols=allg]
+
+allshares <- do.call("rbind", list(sharegas1, sharegas2, sharegas3, sharegas4))
+
+write.xlsx(allshares, file = gsub("rdata", "xlsx", gsub("edgar_food", "gas_shares", last)))
+
+
+```
+
+
+
+## Energy
+Energy. Emissions from energy use occurred throughout the food supply chain, with contributions from the manufacturing and construction sectors (900 MtCO2-eq yr-1, out of which 28% was attributable to the food, beverage and tobacco industry) and the transport sector (750 MtCO2-eq yr-1). Energy industries supplying electricity and heat contributed 440 MtCO2-eq yr-1, fuel combustion in agriculture, forestry and fisheries amounted to 400 MtCO2-eq yr-1, emissions from residential and commercial fuel combustion contributed 230 MtCO2-eq yr-1and 120 MtCO2-eq yr-1, respectively. 320 MtCO2-eq yr-1 were from other sectors. 
+
+```{r Edgar_energy2}
+
+ene <- globdetails[, cat := substr(ipcc, 1, 3)]
+ene[unit=="GtCO2eq", round(1000 * sum(food, na.rm = TRUE), 0), by=cat]
+```
+
+Energy. Emissions from energy use occurred throughout the food supply chain, with main contributions coming from energy industries supplying electricity and heat contributed (970 MtCO2-eq yr-1), the manufacturing and construction sectors (920 MtCO2-eq yr-1, out of which 29% was attributable to the food, beverage and tobacco industry), and the transport sector (760 MtCO2-eq yr-1). These were almost entirely as CO2. Energy emissions from forestry and fisheries amounted to 480 MtCO2-eq yr-1, with 91 % of emissions as CO2 , Emissions from residential and commercial fuel combustion contributed 250 MtCO2-eq yr-1 (79 % of emissions as CO2, and with emissions of 1.7 MtCH4 yr-1 ) and 130 MtCO2-eq yr-1 (with 98 % of emissions as CO2), respectively. 
+
+```{r Edgar_energy3}
+
+# Manufacturing
+manufact <- indsector(globdetails = globdetails, sect = "1A2")
+foodtobacco <- indsector(globdetails = globdetails, sect = "1A2e")
+
+manufact
+#Share of manufact for CO2
+round(100*manufact[gas=="CO2" & unit=="GtCO2eq"]$food/manufact[gas=="GHG"]$food, 0)
+
+foodtobacco
+
+#Share of emissions from Food, beverages and tobacco
+round(100*foodtobacco[gas=="GHG"]$food/manufact[gas=="GHG"]$food, 0)
+
+# Transport
+transp <- indsector(globdetails = globdetails, sect = "1A3|1C")
+round(100*transp[gas=="CO2" & unit=="GtCO2eq"]$food/transp[gas=="GHG"]$food, 0)
+
+agrifuel <- indsector(globdetails = globdetails, sect = "1A4c")
+round(100*agrifuel[gas=="CO2" & unit=="GtCO2eq"]$food/agrifuel[gas=="GHG"]$food, 0)
+
+residential <- indsector(globdetails = globdetails, sect = "1A4b")
+round(100*residential[gas=="CO2" & unit=="GtCO2eq"]$food/residential[gas=="GHG"]$food, 0)
+commercial <- indsector(globdetails = globdetails, sect = "1A4a")
+round(100*commercial[gas=="CO2" & unit=="GtCO2eq"]$food/commercial[gas=="GHG"]$food, 0)
+
+```
+
+
+## Transport
+The largest contributor to food system transport GHG emissions was road transport (93 %), 
+followed by navigation (4 %), rail (2 %), and aviation (1 %). 
+
+```{r Transport}
+trans <- ene[, cat := substr(ipcc, 1, 4)]
+trans <- trans[grepl("^1A3|1C", cat) & unit=="GtCO2eq", sum(food, na.rm = TRUE), by=.(cat)]
+trans
+
+#road transport
+round(100 * trans[cat=="1A3b"]$V1/sum(trans$V1), 0)
+#navigation
+round(100 * (trans[cat =="1C2"]$V1+trans[cat =="1A3d"]$V1)/sum(trans$V1), 0)
+#Rail
+round(100 * trans[cat=="1A3c"]$V1/sum(trans$V1), 1)
+#Aviation
+round(100 * (trans[cat =="1C1"]$V1+trans[cat =="1A3a"]$V1)/sum(trans$V1), 0)
+
+
+```
+
+## Industry
+Industry. Direct industrial emissions associated with food systems are generated by the fertiliser industry for ammonia production (280 MtCO2-eq yr-1 as CO2) or nitric acid (60 MtCO2-eq yr-1 as N2O) and the refrigerants industry (160 MtCO2-eq yr-1 as F-gases). Packaging contributed to food system GHG emissions with about 5.4% of total emissions (0.98 GtCO2-eq yr-1). Major emissions come from the use of pulp and paper (60 MtCO2-eq yr-1), aluminium (30 MtCO2-eq yr-1), with ferrous metals, glass, and plastics having smaller contribution to food system GHG emissions. High shares of emissions from packaging are found for beverages and some fruit and vegetables (Poore and Nemecek 2018). 
+
+```{r Industry1}
+industry <- indsector(globdetails = globdetails, sect = "2")
+
+indcat <- ene[unit=="GtCO2eq" & Year==2018]
+indcat <- indcat[, cat := substr(ipcc, 1, 4)]
+
+indcat <- indcat[! is.na(food), sum(food), by=.(cat, gas)]
+indcat1 <- dcast.data.table(indcat, cat ~ gas, value.var = "V1", fill=0)
+indcat2 <- indcat[, sum(V1), by=cat]
+
+#Ammonia production - this does not include Nitric Acid production (2B2) and adipic acid production (3B3) and other chemicals
+#Note that C stored in Urea is NOT accounted her for as negative emissions (2B1s) 
+indcat2[cat=="2B1g"]
+
+# Nitric Acid
+indcat2[cat=="2B2"]
+nitshare <- allshares[cat=="2B2"]
+
+#Refrigeration
+sum(indcat2[grepl("^2F", cat)]$V1)
+```
+
+```{r Industry2}
+# Glass and Soda Ash
+# 2A7a	Glass production
+# 2A4b	Soda ash use
+
+indcat2[cat %in% c("2A7a", "2A4b")]
+# Aluminum  2C4b	Aluminium foundries: SF6 use
+#           2C3a	Aluminium production (primary)
+# 1A2b	Non-ferrous metals
+# 1A2bx	Non-ferrous metals (biomass)
+
+indcat2[cat %in% c("2C4b", "2C3a", "1A2b", "1A2bx")]
+sum(indcat2[cat %in% c("2C4b", "2C3a", "1A2b", "1A2bx")]$V1)
+
+glassalu <- sum(indcat2[cat %in% c("2A7a", "2A4b", "2C4b", "2C3a", "1A2b", "1A2bx")]$V1)
+glassalu
+
+# Iron and steel 
+sum(indcat2[cat %in% c("2C1a","1A2a")]$V1) 
+
+# Pulp and paper
+indcat2[cat %in% c("1A2d", "1A2dx")]
+```
+
+```{r packaging}
+
+pack <- edgarfood[Year %in% sely & part %in% c("EDGAR_FOOD", "FAO_FOOD"), 
+                  .(ktCO2eq=sum(ktCO2eq, na.rm = TRUE), ktgas=sum(ktgas, na.rm = TRUE)), by=.(gas, Year, stagedet)]
+packn <- pack[stagedet != "Packaging", sum(ktCO2eq)/1000000]
+packy <- pack[stagedet == "Packaging", sum(ktCO2eq)/1000000]
+packyc <- pack[stagedet == "Packaging", sum(ktCO2eq)/1000000, by=gas]
+packyg <- pack[stagedet == "Packaging", sum(ktgas)/1000000, by=gas]
+packa <- pack[, sum(ktCO2eq)/1000000]
+
+# Total Packaging emissions [Gt CO2eq]
+packy
+# Share of Packaging emissions
+packy/packa
+# Share of CH4 in packaging emissions
+packyc[, share := round(100 * V1/packy, 0)]
+# Emissions of CH4 [Mt CH4]
+packy
+packyg[gas=="CH4"]$V1*1000
+```
+
+## Waste
+Waste. Management of waste generated in food system (including food waste, waste water, packaging waste etc.) leads to biogenic GHG emissions and contributed with 1.7 GtCO2-eq yr-1 to food systems' GHG emissions. Thereof, 55 % were from domestic and commercial wastewater (30 MtCH4 yr-1 and 310 ktN2O yr-1), 36 % from solid waste management (20 MtCH4 yr-1 and 310 ktN2O yr-1), and 8 % from industrial wastewater (4 MtCH4 yr-1 and 80 ktN2O yr-1). Emissions from waste incineration and other waste management systems contribute 1 %.
+
+```{r waste}
+waste <- indsector(globdetails = globdetails, sect = "6")
+ww_domcom <- indsector(globdetails = globdetails, sect = "6B2")
+ww_ind <- indsector(globdetails = globdetails, sect = "6B1")
+sw <- indsector(globdetails = globdetails, sect = "6A")
+
+ww_domcomGHG <- ww_domcom[unit=="GtCO2eq" & gas=="GHG"]$food
+sw_GHG <- sw[unit=="GtCO2eq" & gas=="GHG"]$food
+ww_indGHG <- ww_ind[unit=="GtCO2eq" & gas=="GHG"]$food
+w_GHG <- waste[unit=="GtCO2eq" & gas=="GHG"]$food
+
+round(100 * ww_domcomGHG/w_GHG, 0)
+round(100 * sw_GHG/w_GHG, 0)
+round(100 * ww_indGHG/w_GHG, 0)
+round(100 * (w_GHG - ww_domcomGHG - sw_GHG - ww_indGHG)/w_GHG, 0)
+
+allshares[grepl("^6[AB]", cat)]
+
+#CH4 emissions in Mt CH4
+ww_domcomCH4 <- globdetails[Year==2018 & unit=="Gtgas" & gas=="CH4" & grepl("6B2", ipcc), 1000*sum(food)]
+ww_domcomCH4
+ww_indCH4 <- globdetails[Year==2018 & unit=="Gtgas" & gas=="CH4" & grepl("6B1", ipcc), 1000*sum(food)]
+ww_indCH4
+sw_CH4 <- globdetails[Year==2018 & unit=="Gtgas" & gas=="CH4" & grepl("6A", ipcc), 1000*sum(food)]
+sw_CH4
+
+#N2O emission in kt N2O
+ww_domcomN2O <- globdetails[Year==2018 & unit=="Gtgas" & gas=="N2O" & grepl("6B2", ipcc), 1000000*sum(food)]
+ww_domcomN2O
+ww_indN2O <- globdetails[Year==2018 & unit=="Gtgas" & gas=="N2O" & grepl("6B1", ipcc), 1000000*sum(food)]
+ww_indN2O
+
+```
+

@@ -10,8 +10,8 @@ rm(list=ls())
 ## Options: 
 ## TRUE  : do step 
 ## FALSE : load previous results
-  do.importfood <- TRUE
-  do.importtotal <- TRUE
+  do.importfood <- FALSE
+  do.importtotal <- FALSE
   do.aggregate <- TRUE
 ##
 ##
@@ -33,6 +33,7 @@ jrcbox <- paste0("C:/Users/", myuser, "/ownCloud/")
 manuscripts <- paste0(google, "../literature/manuscripts")
 edgar_folder <- paste0(jrcbox, "EDGAR-FOOD/202108/")
 edgar_uncfolder <- paste0(jrcbox, "EDGAR-FOOD/202006_unc/")
+edgar_uncfolder <- paste0(edgar_folder, "unc/")
 
 if(FALSE) extractEDGARprocesses(unc.table)
 
@@ -41,8 +42,28 @@ source("edgarfood_unc_loaddata.r")
 source("edgarfood_unc_aggregate.r")
 source("../capriextract/f_tools.r")
 
-load(f.loadfood(doload = do.importfood)) #FALSE to reload rdata file, TRUE to load from EDGAR exports
-load(f.loadtotal(doload = do.importtotal))
+load(f.loadfood(doload = FALSE)) #FALSE to reload rdata file, TRUE to load from EDGAR exports
+load(f.loadtotal(doload = FALSE))
+
+write.xlsx(head(unc.table_foodshare), file=paste0(edgar_uncfolder, "unc.table_foodshare_head.xlsx"))
+write.xlsx(head(unc.total), file=paste0(edgar_uncfolder, "unc.total_head.xlsx"))
+uncmap <- unique(unc.total[, .(processes, ipcc06, ipccX)])
+uncmap[, ipccdet := gsub("\\.", "", ipccX)]
+
+ipccx <- unique(uncmap$ipccdet)
+ipccd <- unique(A$IPCC_for_std_report_detailed)
+
+
+sort(ipccd[! ipccd %in% ipccx])
+sort(ipccx[! ipccx %in% ipccd])
+ipccx[ ipccx %in% ipccd]
+
+
+# See edgar-food.V6.r
+#fileAB <- paste0(edgar_input, "IPCC_input_for_adrian_06082021.xlsx")
+#A <- as.data.table(read.xlsx(fileAB, sheet = "EDGAR_GHG_food_EMI", startRow = 2, na.strings = "NULL"))
+write.xlsx(head(A), file=paste0(edgar_uncfolder, "edgarfood_input.xlsx"))
+
 
 # uniquefields <- c("processes", 
 #                   "FOOD_system_stage_detailed",  #Works also with FOOD_system_stage
@@ -71,29 +92,33 @@ load(f.loadtotal(doload = do.importtotal))
 # ---> Define CorrLevel which is used for the first step (partial correlated aggregation)  
 file.agg=paste0(edgar_folder, "unc_elements_aggregates.rdata")
 if(do.aggregate) {
-  
-  unc.table <- rbind(food=unc.table_foodshare, 
-                     total=unc.total, fill = TRUE, idcol = TRUE)
-
-  unc.table <- unc.table[emi != 0]
-  unc.table[, sector := substr(ipcc06, 1, 1)]
-  unc.table[, CorrLevel := substr(ipcc06, 1, 3)]
-  unc.table[is.na(FOOD_system_stage), FOOD_system_stage := "TOTAL"]
-  unc.table[is.na(FOOD_system_stage_detailed), FOOD_system_stage_detailed := "TOTAL"]
-  unc.table[is.na(FOOD_system_compartment), FOOD_system_compartment := "TOTAL"]
-  unc.table[grepl("^1", ipcc06) & gas=="CO2", CorrLevel := substr(processes, 9, 11)]
-  setnames(unc.table, "FOOD_system_stage_detailed", "stage")
-  # ---> Ensure that all emissions are captured, define level of correlation generically
-  unc.table[is.na(CorrLevel), CorrLevel := sector]
-  
-  # Aggregate by country, gas and stage
-  
-  l <- agguncertainty(unc.table, file.agg = file.agg)
-  unc.elements <- l[[1]]
-  emi <- l[[2]]
-  save(unc.table, emi, unc.elements, file=paste0(edgar_folder, "unc.table.rdata"))
-  curfile <- paste0(edgar_folder, "unc.table_total.rdata"); if(file.exists(curfile)) file.remove(curfile)
-  curfile <- paste0(edgar_folder, "unc.table_food.rdata"); if(file.exists(curfile)) file.remove(curfile)
+ 
+    unc.table <- rbind(food=unc.table_foodshare, 
+                       total=unc.total, fill = TRUE, idcol = TRUE)
+    
+    unc.table <- unc.table[emi != 0]
+    unc.table[, sector := substr(ipcc06, 1, 1)]
+    unc.table[, CorrLevel := substr(ipcc06, 1, 3)]
+    unc.table[is.na(FOOD_system_stage), FOOD_system_stage := "TOTAL"]
+    unc.table[is.na(FOOD_system_stage_detailed), FOOD_system_stage_detailed := "TOTAL"]
+    unc.table[is.na(FOOD_system_compartment), FOOD_system_compartment := "TOTAL"]
+    unc.table[grepl("^1", ipcc06) & gas=="CO2", CorrLevel := substr(processes, 9, 11)]
+    setnames(unc.table, "FOOD_system_stage_detailed", "stage")
+    # ---> Ensure that all emissions are captured, define level of correlation generically
+    unc.table[is.na(CorrLevel), CorrLevel := sector]
+    
+    reuseAR5data <- TRUE
+    if(! reuseAR5data){ 
+      # Aggregate by country, gas and stage
+    }else{
+      convertAR5_to_AR6 
+    }
+    l <- agguncertainty(unc.table, file.agg = file.agg)
+    unc.elements <- l[[1]]
+    emi <- l[[2]]
+    save(unc.table, emi, unc.elements, file=paste0(edgar_folder, "unc.table.rdata"))
+    curfile <- paste0(edgar_folder, "unc.table_total.rdata"); if(file.exists(curfile)) file.remove(curfile)
+    curfile <- paste0(edgar_folder, "unc.table_food.rdata"); if(file.exists(curfile)) file.remove(curfile)
 }else{
   load(file.agg)   
   load(file=paste0(edgar_folder, "unc.table.rdata"))

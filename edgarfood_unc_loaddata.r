@@ -2,7 +2,7 @@
 
 f.loadfood <- function(doload=TRUE){
   
-  file.foodshare <- paste0(edgar_folder, "unc.table_food.rdata")
+  file.foodshare <- paste0(edgar_uncfolder, "unc.table_food.rdata")
   
   if(doload){
     
@@ -66,7 +66,7 @@ f.loadtotal <- function(doload=TRUE){
   #                               N2O needs to be divided by 298 and multiplied by 265
   
   
-  file.totals <- paste0(edgar_folder, "unc.table_total.rdata")
+  file.totals <- paste0(edgar_uncfolder, "unc.table_total.rdata")
   
   if(doload){
     

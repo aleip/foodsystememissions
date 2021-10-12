@@ -13,6 +13,7 @@ manuscripts <- paste0(google, "../literature/manuscripts")
 edgar_folder <- paste0(google, "edgar")
 edgar_folder2020 <- paste0(jrcbox, "EDGAR-FOOD/202011/")
 edgar_folder <- paste0(jrcbox, "EDGAR-FOOD/202108/")
+edgar_input <- paste0(edgar_folder, "input_edgar/")
 fao_folder <- paste0(google, "/projects/faostat_landuse/")
 fao_folder <- edgar_folder
 ipcc_folder <- paste0(google, "/projects/ipccwg3/xcutting/dms05report_data_energy_emissions/")
@@ -70,9 +71,27 @@ openEDGAREmission <- function(){
     AB <- as.data.table(read.xlsx(fileAB, sheet = "EDGAR_TOT_EMI_AR5", startRow = 4, na.strings = "NULL"))
   }
   if(version=="202108"){
-    fileAB <- paste0(edgar_folder, "IPCC_input_for_adrian_06082021.xlsx")
+    fileAB <- paste0(edgar_input, "IPCC_input_for_adrian_06082021.xlsx")
     A <- as.data.table(read.xlsx(fileAB, sheet = "EDGAR_GHG_food_EMI", startRow = 2, na.strings = "NULL"))
-    nfood <- as.data.table(read.xlsx(fileAB, sheet = "EDGAR_DIFF_EMI", startRow = 4, na.strings = "NULL"))
+    
+    
+    #20211004 - Mistake in this data. Email Diego:
+    #From: GUIZZARDI Diego (JRC-ISPRA) <Diego.GUIZZARDI@ec.europa.eu>
+    #Sent: Monday, October 4, 2021 5:41 PM
+    #To: LEIP Adrian (RTD) <Adrian.LEIP@ec.europa.eu>; SOLAZZO Efisio (JRC-ISPRA-EXT) <Efisio.SOLAZZO@ext.ec.europa.eu>
+    #Cc: CRIPPA Monica (JRC-ISPRA) <Monica.CRIPPA@ec.europa.eu>
+    #Subject: Re: HELP!!! Final check EDGAR-FOOD v.6
+    #Dear Adrian,
+    #I finally found the problem in the SQL to calculate the difference between REF and FOOD.
+    #The FOOD dataset contains codes like EN1, EN2, EN3.. etc.. and to be able to calculate the difference with REF (where I have ENE) I group by the EN1, EN2 etc in 1 single entity per county and pr_code..
+    #My problem was in doing the grouping.. I was including for example ENF in ENE, PRU in PRO.. and this mis-allocation of some sectors was problematic for CO2 and mainly for CH4... 
+    #Now the numbers are ok, if you sum FOOD+DIFF you have REF. 
+    #I am sorry about that... I hope now everything is fine.
+    #Have a nice evening.
+    #Diego
+    #nfood <- as.data.table(read.xlsx(fileAB, sheet = "EDGAR_DIFF_EMI", startRow = 4, na.strings = "NULL"))
+    fileB <- paste0(edgar_input, "difference_between_REF_and_FOOD_10042021.xlsx")
+    nfood <- as.data.table(read.xlsx(fileB, sheet = "Sheet1", startRow = 1, na.strings = "NULL"))
     #totcounsector <- as.data.table(read.xlsx(fileAB, sheet = "EDGAR_GHG_food_by_country"))
     #totsubssector <- as.data.table(read.xlsx(fileAB, sheet = "EDGAR_GHG_food_by_subst"))
     
@@ -91,6 +110,35 @@ openEDGAREmission <- function(){
   nfood[, FOOD_system_stage_detailed := NA]
   #totcounsector[, part := "EDGAR"]
   
+  #Check EDGAR totals
+  fileTot <- paste0(edgar_input, "v6.0_REF_for_food_10042021.xlsx")
+  tote <- as.data.table(read.xlsx(fileTot, sheet = "Sheet1", startRow = 1, na.strings = "NULL"))
+  totedgar <- melt.data.table(tote, id.vars = c("Country_code_A3", "Name", "Substance", "IPCC_for_std_report_detailed"), measure.vars = paste0("Y_", 1990:2018))
+  totedgar[, sec := substr(IPCC_for_std_report_detailed, 1, 1)]
+  totedgarglob <- totedgar[, sum(value, na.rm = TRUE), by=.(variable, Substance, sec)]
+  totedgarglob <- dcast.data.table(totedgarglob, variable + sec ~ Substance, value.var = "V1")
+  write.xlsx(totedgarglob, file=paste0(edgar_input, "Edgar_total_by_gas_glob.xlsx"))
+  
+  tote[, part := "EDGAR_total"]
+  tote[, FOOD_system_stage := NA]
+  tote[, FOOD_system_stage_detailed := NA]
+  
+  
+  At <- A[, lapply(.SD, sum), by=.(Country_code_A3, Substance, IPCC_for_std_report_detailed, part), .SDcols=paste0("Y_", 1990:2018)]
+  tt <- tote[, lapply(.SD, sum, na.rm = TRUE), by=.(Country_code_A3, Substance, IPCC_for_std_report_detailed, part), .SDcols=paste0("Y_", 1990:2018)]
+  Attt <- melt.data.table(rbind(At, tt), id.vars = c("Country_code_A3", "Substance", "IPCC_for_std_report_detailed", "part"), measure.vars = paste0("Y_", 1990:2018)) 
+  Attt <- dcast.data.table(Attt, Country_code_A3 + Substance + IPCC_for_std_report_detailed + variable ~ part, value.var = "value")
+  Attt[is.na(EDGAR_FOOD), EDGAR_FOOD :=0]
+  Attt[, EDGAR_nFOOD := EDGAR_total - EDGAR_FOOD]
+  Att <- melt.data.table(Attt, id.vars = c("Country_code_A3", "Substance", "IPCC_for_std_report_detailed", "variable"), 
+                         measure.vars = c("EDGAR_FOOD", "EDGAR_total", "EDGAR_nFOOD"), variable.name = "part")
+  Atnew <- dcast.data.table(Att, Country_code_A3 + Substance + IPCC_for_std_report_detailed + part ~ variable, value.var = "value")
+  nfood <- Atnew[part != "EDGAR_FOOD"]
+  nfood[, FOOD_system_stage := NA]
+  nfood[, FOOD_system_stage_detailed := NA]
+  nfood[, FOOD_system_compartment := NA]
+  
+   
   #tota <- AB[, sum(Y_2018, na.rm=TRUE), by = .(Country_code_A3, Substance)]
   #totb <- totcounsector[, sum(as.numeric(Y_2018), na.rm=TRUE), by = .(Country_code_A3, Substance)]
   #tota <- dcast.data.table(tota, Country_code_A3~Substance, value.var = 'V1')
@@ -112,15 +160,17 @@ openEDGAREmission <- function(){
   #nfood[, part := "EDGAR_nFOOD"] 
   
   # Recombine
+  A <- A[, -c("Name", "C_group_IM24_sh", "dev_country", "EDGAR_SECTOR", "IPCC_for_std_report_detailed_desc"), with=FALSE]
   edgar <- rbind(A, nfood, fill=TRUE)
-  edgar <- edgar[, -c("Name", "C_group_IM24_sh", "dev_country", "EDGAR_SECTOR", "IPCC_for_std_report_detailed_desc"), with=FALSE]
   edgar <- melt.data.table(edgar, id.vars = c("Country_code_A3", "Substance", "IPCC_for_std_report_detailed", 
                                               "FOOD_system_stage", "FOOD_system_stage_detailed", "FOOD_system_compartment", "part"), variable.name = "Year")
   edgar[, Year := as.numeric(gsub("Y_", "", Year))]
+  edgar[is.na(value), value := 0]
   
   edgar <- edgar[, .(value=sum(value)), by=.(Country_code_A3, Substance, IPCC_for_std_report_detailed, 
                                             FOOD_system_stage, FOOD_system_stage_detailed, FOOD_system_compartment, part, Year)]
-  save(edgar, file=paste0(edgar_folder, "EDGAR_", format(Sys.time(), "%Y%m%d"), ".rdata"))
+  
+  save(edgar, countrytable, categorytable, nfood, file=paste0(edgar_folder, "EDGAR_", format(Sys.time(), "%Y%m%d"), ".rdata"))
   save(countrytable, categorytable, file=paste0(edgar_folder, "tables_", format(Sys.time(), "%Y%m%d"), ".rdata"))
   
   return(edgar)
@@ -183,6 +233,7 @@ openFAOemissions <- function(){
   # Clean countries
   faocountries <- unique(faofood[, .(Country_code_A3=`Area Code (ISO3)`, Area)])
   load(paste0(edgar_folder, "EDGAR_", format(Sys.time(), "%Y%m%d"), ".rdata"))
+  load(paste0(edgar_folder, "tables_", format(Sys.time(), "%Y%m%d"), ".rdata"))
   allcountries <- merge(countrytable, faocountries, by="Country_code_A3", all = TRUE)
   write.xlsx(allcountries, file=paste0(edgar_folder, "countrymerge.xlsx"))
   
@@ -261,9 +312,13 @@ mergeedgarfood <- function(){
   ipccgwps <- data.table(read.xlsx(paste0(edgar_folder, "ipcc_ar6_data_edgar6_all_gases_gwp100.xlsx"), sheet = "100_yr_gwps"))
   ipccgwpch4 <- data.table(read.xlsx(paste0(edgar_folder, "ipcc_ar6_data_edgar6_all_gases_gwp100.xlsx"), sheet = "CH4_gwps"))
   ipccgwpch4 <- unique(ipccgwpch4[, .(ipcc=sector_code, gwp_ar6)])
-  
+ 
+  #For some categories there are 2 GWPs
+  ipccch4 <- unique(ipccgwpch4[, .(ipcc, gwp_ar6)])
+  ipccch4 <- ipccch4[, .(gwp_ar6 = mean(gwp_ar6)), by=.(ipcc)]
+   
   edgarfaogas <- merge(edgarfao[gas!="CH4"],ipccgwps, by="gas")
-  edgarfaoch4 <- merge(edgarfao[gas=="CH4"], unique(ipccgwpch4[, .(ipcc, gwp_ar6)]), by = "ipcc")
+  edgarfaoch4 <- merge(edgarfao[gas=="CH4"], ipccch4[, .(ipcc, gwp_ar6)], by = "ipcc")
   edgarfood <- rbind(edgarfaogas, edgarfaoch4)
   edgarfood <- edgarfood[! is.na(ktgas)]
   setkey(edgarfood, Country_code_A3, Year, ipcc, stage, gas)
@@ -307,7 +362,9 @@ calculateGlobalShares <- function(dt = edgarfood, gwp){
     
   }
   
-  foodsystemelements <- c("EDGAR_FOOD", "EDGAR_nFOOD", "FAO_FOOD", "FAO_nFOOD")
+  load(paste0(edgar_folder, "tables_", format(Sys.time(), "%Y%m%d"), ".rdata"))
+  #foodsystemelements <- c("EDGAR_FOOD", "EDGAR_nFOOD", "FAO_FOOD", "FAO_nFOOD")
+  foodsystemelements <- c("EDGAR_FOOD", "EDGAR_nFOOD", "EDGAR_total", "FAO_FOOD", "FAO_nFOOD")
   calctot <- function(dt = edgarfood){
     dtcalctot <- copy(dt)
     totemissions <- dtcalctot[, sum(ktCO2eq, na.rm=TRUE), by=.(Country_code_A3, Year, part)]
@@ -325,7 +382,9 @@ calculateGlobalShares <- function(dt = edgarfood, gwp){
     # Non-food system LULUCF emissions (might be negative !)
     FAO_nFOOD, 
     # Total non-LULUCF emissions
-    EDGAR_total = EDGAR_FOOD + EDGAR_nFOOD,
+    #EDGAR_total = EDGAR_FOOD + EDGAR_nFOOD,
+    #EDGAR_nFOOD = EDGAR_total - EDGAR_FOOD,
+    EDGAR_total,
     FAO_total = FAO_FOOD + FAO_nFOOD)]
   alldata[, `:=` (  
     # Total food system emissions
@@ -346,8 +405,8 @@ calculateGlobalShares <- function(dt = edgarfood, gwp){
   
   
   global <- melt.data.table(alldata, id.vars = c("country", "year"), variable.name = "type")
-  devind <- merge(global, unique(A[, .(Country_code_A3, dev_country)]), by.x="country", by.y="Country_code_A3")
-  cgroups <- merge(global, unique(A[, .(Country_code_A3, C_group_IM24_sh)]), by.x="country", by.y="Country_code_A3")
+  devind <- merge(global, unique(devtype[, .(Country_code_A3, dev_country)]), by.x="country", by.y="Country_code_A3")
+  cgroups <- merge(global, unique(cgroup[, .(Country_code_A3, C_group_IM24_sh)]), by.x="country", by.y="Country_code_A3")
   
   global <- global[, sum(value, na.rm=TRUE), by=.(year, type)]
   global <- dcast.data.table(global, year ~ type, value.var = "V1")
@@ -391,6 +450,7 @@ calculateStages <- function(curdt=edgarfood, grouping='stagedet', gwp='ar6'){
   
   curstages <- copy(curdt)
   #setnames(curstages, gwp, "value")
+  load(paste0(edgar_folder, "tables_", format(Sys.time(), "%Y%m%d"), ".rdata"))
   
   curstages <- curstages[ktCO2eq != 0]
   devtable <- unique(countrytable[, .(Country_code_A3, dev_country, C_group_IM24_sh)])
@@ -463,7 +523,7 @@ calculateStages <- function(curdt=edgarfood, grouping='stagedet', gwp='ar6'){
   
 }
 
-Global_byGasPart <- function(curdt = edgarfood, gwp=ar6){
+Global_byGasPart <- function(curdt = edgarfood, gwp="ar6"){
   
   edt <- copy(curdt)
   #setnames(edt, gwp, "value")
@@ -481,32 +541,33 @@ Global_byGasPart <- function(curdt = edgarfood, gwp=ar6){
   edt[ipcc%in%c("7B1", "7C1"), sec:=1]
   edt[ipcc%in%c("7B2", "7C2"), sec:=2]
   
-  edt <- edt[, .(sec, sector, part, Country_code_A3, gas, year=Year, ktCO2eq)]
+  edt <- edt[, .(sec, sector, part, Country_code_A3, gas, year=Year, ktgas, ktCO2eq)]
   
   # Change names
-  em3sector <- edt[, .(year, sec, sector, part, Country_code_A3, gas, ktCO2eq)]
+  em3sector <- edt[, .(year, sec, sector, part, Country_code_A3, gas, ktgas, ktCO2eq)]
   em3sector <- em3sector[, sector := gsub(" \\(please specify\\)", "", sector)]
   em3sector <- em3sector[, sector := gsub(",", "", sector)]
   em3sector[grepl("F", gas), gas:="F-gases"]
   
   # Aggregate by year, sector, substance
-  em3sector <- em3sector[, sum(ktCO2eq), by=.(year, sec, sector, part, gas)]
+  em3sector <- em3sector[, lapply(.SD, sum), by=.(year, sec, sector, part, gas), .SDcols=c("ktgas", "ktCO2eq")]
   
   # Convert from kt CO2eq to Mt CO2eq per year
-  em3sector <- em3sector[, .(year, sec, sector, part, gas, ktCO2eq=V1/1000)]
+  em3sector <- em3sector[, .(year, sec, sector, part, gas, ktgas=ktgas/1000, ktCO2eq=ktCO2eq/1000)]
   em3sector <- em3sector[, sector := paste0(sec, " ", sector)]
   
   # Calculate totals
-  em3sectort <- dcast.data.table(em3sector, year+sec+sector+gas ~ part, value.var = "ktCO2eq", fill = 0)
+  em3sectorm <- melt.data.table(em3sector, id.vars = c("year", "sec", "sector", "part", "gas"), variable.name = "unit")
+  em3sectort <- dcast.data.table(em3sectorm, year+sec+sector+gas+unit ~ part, value.var = "value", fill = 0)
   em3sectort[, `:=` (EDGAR_total = EDGAR_FOOD + EDGAR_nFOOD,
                      FAO_total = FAO_FOOD + FAO_nFOOD,
                      FOOD_total = EDGAR_FOOD + FAO_FOOD,
                      total = EDGAR_FOOD + EDGAR_nFOOD + FAO_FOOD + FAO_nFOOD)]
   em3sectort[sec==7, sector:= '7 Indirect']
   
-  em3sectort[, FOOD_bysec := sum(FOOD_total), by=.(year, sec)]
-  em3sectort[, ALL_total := sum(total), by=.(year)]
-  em3sectort[, ALLFOOD_total := sum(FOOD_total), by=.(year)]
+  em3sectort[unit=="ktCO2eq", FOOD_bysec := sum(FOOD_total), by=.(year, sec, unit)]
+  em3sectort[unit=="ktCO2eq", ALL_total := sum(total), by=.(year, unit)]
+  em3sectort[unit=="ktCO2eq", ALLFOOD_total := sum(FOOD_total), by=.(year, unit)]
   
   fn <- paste0(edgar_folder, "EDGAR-FOOD_by_Gas_", gwp, "_", format(Sys.time(), "%Y%m%d"), ".rdata")
   write.xlsx(em3sectort, file=gsub("rdata", "xlsx", fn))
@@ -520,25 +581,27 @@ IPCC_table <- function(curdt = edgarfood, gwp='ar6'){
   
   load(Global_byGasPart(curdt, gwp))
   
-  foodemissions <- em3sectort[, .(year, sector, gas, FOOD_total, total)]
+  foodemissions <- em3sectort[, .(year, sector, gas, unit, FOOD_total, total)]
   setnames(foodemissions, "FOOD_total", "FOOD")
-  foodtot <- foodemissions[, lapply(.SD, sum, na.rm=TRUE), by=.(year, gas), .SDcols=c("FOOD", "total")]
+  foodtot <- foodemissions[, lapply(.SD, sum, na.rm=TRUE), by=.(year, gas, unit), .SDcols=c("FOOD", "total")]
   foodtot$sector <- "Total"
   foodemissions <- rbind(foodemissions, foodtot)
-  foodsec <- foodemissions[, lapply(.SD, sum, na.rm=TRUE), by=.(year, sector), .SDcols=c("FOOD", "total")]
+  foodsec <- foodemissions[unit=="ktCO2eq", lapply(.SD, sum, na.rm=TRUE), by=.(year, sector, unit), .SDcols=c("FOOD", "total")]
   foodsec$gas <- "GHG"
-  foodemissions <- rbind(foodemissions, foodsec)
+  foodsecgas <- copy(foodsec)
+  foodsecgas[, unit := "ktgas"]
+  foodemissions <- rbind(foodemissions, foodsec, foodsecgas)
   foodemissions[, share := FOOD/total]
   
-  foodshares <- dcast.data.table(foodemissions, year + sector ~ gas, value.var = c("FOOD", "total", "share"), fill = 0)
+  foodshares <- dcast.data.table(foodemissions, year + sector + unit ~ gas, value.var = c("FOOD", "total", "share"), fill = 0)
   # Applying AR5-GWP100: CH4 28, N2O 265
   # GWPs - AR5
-  foodemissions[, gwp := ifelse(gas=="CH4", 28, ifelse(gas=="N2O", 265, 1))]
-  foodemissions[, (c("FOOD", "total")) := .SD/gwp, .SDcols=c("FOOD", "total")]
+  #foodemissions[, gwp := ifelse(gas=="CH4", 28, ifelse(gas=="N2O", 265, 1))]
+  #foodemissions[, (c("FOOD", "total")) := .SD/gwp, .SDcols=c("FOOD", "total")]
   
   
   # Select data for table
-  ipcctable <- foodemissions[year %in% c(1990, 2015, 2018) & !grepl("^7", sector), .(year, sector, gas, FOOD, share)]
+  ipcctable <- foodemissions[year %in% c(1990, 2015, 2018) & !grepl("^7", sector), .(year, sector, gas, unit, FOOD, share)]
   
   # Round values
   ipcctable[ipcctable == 0] <- NA
@@ -547,13 +610,13 @@ IPCC_table <- function(curdt = edgarfood, gwp='ar6'){
   ipcctable <- ipcctable[, share := round(share, 1)]
   
   # Dcast table
-  ipcctable <- dcast.data.table(ipcctable, year  + sector ~ gas, value.var = c("FOOD", "share"))
+  ipcctable <- dcast.data.table(ipcctable, unit + year  + sector ~ gas, value.var = c("FOOD", "share"))
   
   # Sort columns
   ghgs <- c("CO2", "CH4", "N2O", "F-gases", "GHG")
   cols <- c(paste0("FOOD_", ghgs), paste0("share_", ghgs))
   
-  ipcctable <- ipcctable[, .SD, .SDcols = c("year", "sector", cols)]
+  ipcctable <- ipcctable[, .SD, .SDcols = c("unit", "year", "sector", cols)]
   setnames(ipcctable, paste0("FOOD_", ghgs), ghgs)
   
   fn <- paste0(edgar_folder, "IPCC_table_", gwp, "_", format(Sys.time(), "%Y%m%d"), ".rdata")
@@ -566,24 +629,27 @@ IPCC_table <- function(curdt = edgarfood, gwp='ar6'){
   wb <- createWorkbook()
   ws <- addWorksheet(wb, sheetName = "Table 12.7")
   header <- c("Sector", ghgs, ghgs)
-  writeData(wb, startRow = 1, t(header), sheet = 'Table 12.7', startCol = 1, colNames = FALSE)
-  writeData(wb, startRow = 2, t(c("", "Emissions (Mt gas yr-1)", rep("", 4), "Share of total sectoial emissions (%)", rep("", 4))), sheet = 'Table 12.7', startCol = 1, colNames = FALSE)
-  writeData(wb, startRow = 3, t(c("", "1990", rep("", 4+5))), sheet = 'Table 12.7', startCol = 1, colNames = FALSE)
-  writeData(wb, startRow = 4, ipcctable[year==1990, -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
-  writeData(wb, startRow = 11, t(c("", "2015", rep("", 4+5))), sheet = 'Table 12.7', startCol = 1, colNames = FALSE)
-  writeData(wb, startRow = 12, ipcctable[year==2015, -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
-  writeData(wb, startRow = 20, t(c("", "2018", rep("", 4+5))), sheet = 'Table 12.7', startCol = 1, colNames = FALSE)
-  writeData(wb, startRow = 21, ipcctable[year==2018, -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
+  writeData(wb, startRow = 1, t(header), sheet = 'Table 12.7', startCol = 2, colNames = FALSE)
+  writeData(wb, startRow = 2, t(c("", "Emissions (Mt gas yr-1)", rep("", 4), "Share of total sectoial emissions (%)", rep("", 4))), sheet = 'Table 12.7', startCol = 2, colNames = FALSE)
+  writeData(wb, startRow = 3, t(c("", "1990", rep("", 4+5))), sheet = 'Table 12.7', startCol = 2, colNames = FALSE)
+  writeData(wb, startRow = 4, ipcctable[year==1990 & unit=="ktgas", -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
+  writeData(wb, startRow = 11, ipcctable[year==1990 & unit=="ktCO2eq" & sector=="Total", -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
+  writeData(wb, startRow = 12, t(c("", "2015", rep("", 4+5))), sheet = 'Table 12.7', startCol = 2, colNames = FALSE)
+  writeData(wb, startRow = 13, ipcctable[year==2015 & unit=="ktgas", -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
+  writeData(wb, startRow = 20, ipcctable[year==2015 & unit=="ktCO2eq" & sector=="Total", -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
+  writeData(wb, startRow = 21, t(c("", "2018", rep("", 4+5))), sheet = 'Table 12.7', startCol = 2, colNames = FALSE)
+  writeData(wb, startRow = 22, ipcctable[year==2018 & unit=="ktgas", -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
+  writeData(wb, startRow = 29, ipcctable[year==2018 & unit=="ktCO2eq" & sector=="Total", -"year", with=FALSE], sheet = 'Table 12.7', startCol = 1, colNames = FALSE, keepNA = TRUE, na.string = " - ")
   saveWorkbook(wb, file = gsub("rdata", "xlsx", fn), overwrite = TRUE)
   return(fn)
   
 }
 
 
-recalcemissions <- FALSE
-doglobshares <- FALSE
-docalcstages <- FALSE
-docalcsector <- FALSE
+recalcemissions <- TRUE
+doglobshares <- TRUE 
+docalcstages <- TRUE
+docalcsector <- TRUE
 writeIPCCtable <- TRUE
 
 if(recalcemissions){

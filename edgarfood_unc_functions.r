@@ -286,3 +286,30 @@ emissionSharesUncertainty <- function(dtorig, emi_old=NULL, isShare=TRUE, remTer
     
   }
 }
+
+convertAR5_to_AR6 <- function(){
+  load("C:/Users/adrian/ownCloud/EDGAR-FOOD/202108/unc/unc.table_total.rdata")
+  load("C:/Users/adrian/ownCloud/EDGAR-FOOD/202108/unc/unc.table_food.rdata")
+  
+  # From edgarfood_unc.r first lines after if(do.aggregate)
+  unc.table <- rbind(food=unc.table_foodshare, 
+  total=unc.total, fill = TRUE, idcol = TRUE)
+
+  unc.table <- unc.table[emi != 0]
+  unc.table[, sector := substr(ipcc06, 1, 1)]
+  unc.table[, CorrLevel := substr(ipcc06, 1, 3)]
+  unc.table[is.na(FOOD_system_stage), FOOD_system_stage := "TOTAL"]
+  unc.table[is.na(FOOD_system_stage_detailed), FOOD_system_stage_detailed := "TOTAL"]
+  unc.table[is.na(FOOD_system_compartment), FOOD_system_compartment := "TOTAL"]
+  unc.table[grepl("^1", ipcc06) & gas=="CO2", CorrLevel := substr(processes, 9, 11)]
+  setnames(unc.table, "FOOD_system_stage_detailed", "stage")
+  # ---> Ensure that all emissions are captured, define level of correlation generically
+  unc.table[is.na(CorrLevel), CorrLevel := sector]
+  
+  save(unc.table, file="C:/Users/adrian/ownCloud/EDGAR-FOOD/202108/unc/unc.table_AR5.rdata")
+  
+  
+  
+  
+  
+}

@@ -152,6 +152,31 @@ write.xlsx(misscountries, file = paste0(plot_folder, "Costdata_missing_countries
 #       203	Behavioral risks                169	    Risk	    1	3
 #       104	Metabolic risks	                169	    Risk	    1	4
 
+# See IHME_GBD_2017_REI_HIERARCHY_Y2018M11D18.XLSX
+# Sub levels: 92	Child and maternal malnutrition
+#93	Suboptimal breastfeeding
+#239	Child growth failure
+#339	Low birth weight and short gestation
+#95	Iron deficiency
+#96	Vitamin A deficiency
+#97	Zinc deficiency
+
+
+# Sub-level of 'dietary risks": 111	Diet low in fruits
+#112	Diet low in vegetables
+#333	Diet low in legumes
+#113	Diet low in whole grains
+#114	Diet low in nuts and seeds
+#115	Diet low in milk
+#116	Diet high in red meat
+#117	Diet high in processed meat
+#118	Diet high in sugar-sweetened beverages
+#119	Diet low in fiber
+#147	Diet low in calcium
+#121	Diet low in seafood omega-3 fatty acids
+#122	Diet low in polyunsaturated fatty acids
+#123	Diet high in trans fatty acids
+#124	Diet high in sodium
 
 
 
@@ -204,6 +229,7 @@ e4plot <- e4plot[, .(
   
   # Convert back to per capita data
   costPcap = cost/pop,
+  totPcap = tot/pop,
   val_all = val_all_abs/pop,
   val_BMI = val_BMI_abs/pop,
   val_child = val_child_abs/pop,
@@ -223,6 +249,9 @@ e4plot <- e4plot[, .(
 e4plot <- e4plot[, 
                  dominance := ifelse(val_child/(val_child+val_BMI+val_dietary)>0.62, 1, 
                                      ifelse(val_BMI/(val_child+val_BMI+val_dietary)>0.23,2, 3))]
+e4plot[, rat := (val_BMI + val_child + val_dietary)/val_all]
+summary(e4plot$rat)
+
 hist(e4plot$dominance)
 hist(e4plot$foodtCO2cap)
 summary(edgarcostgdb)
@@ -275,7 +304,7 @@ do.intensityplot <- function(dt, doprint=FALSE){
   p <- p + geom_point(shape=21, size  = pxscale*px$Child, fill="#DE4911", stroke=0)
   p <- p + # ggtitle("Food system GHG intensity and diet-related deaths") + 
     xlab(bquote(paste("Whole sale cost for food ($", cap^{-1}, day^{-1}, ")"))) +
-    ylab("Share of GHG emissions from energy")
+    ylab("Share of Food System GHG emissions from energy")
   #p <- p + geom_text(aes(label=px$reg, vjust=px$BMI*1.5), size=3)
   
   p <- p + theme(panel.grid.major.x = element_blank(),
@@ -285,13 +314,16 @@ do.intensityplot <- function(dt, doprint=FALSE){
                  panel.background = element_blank())
   
   p <- p + scale_y_continuous(breaks=seq(0, 1, 0.1))
+  p <- p + theme(axis.text = element_text(size=12, face="bold"), )
   nfactor <- 0.005
+  #Labels on top
   pn <- p + geom_text(label=px$reg, nudge_x = px$shifth, nudge_y=px$BMI + nfactor, check_overlap = FALSE, size = 3)
+  #Labels below bottom
   pn <- pn + geom_text(label=px$regbot, nudge_x = px$shifth, nudge_y=-px$BMI - nfactor, check_overlap = FALSE, size = 3)
   print(pn) 
   
   if(doprint) {
-    png(filename = paste0(plot_folder, "ghgintensityplot_", sel, today(), ".png"), width=10000, height=5000, units="px", res=1000)
+    png(filename = paste0(plot_folder, "ghgintensityplot_", sel, today(), ".png"), width=9000, height=5000, units="px", res=1000)
     print(pn)
     dev.off()
   }  
