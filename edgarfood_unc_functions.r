@@ -287,29 +287,36 @@ emissionSharesUncertainty <- function(dtorig, emi_old=NULL, isShare=TRUE, remTer
   }
 }
 
+#
 convertAR5_to_AR6 <- function(){
-  load("C:/Users/adrian/ownCloud/EDGAR-FOOD/202108/unc/unc.table_total.rdata")
-  load("C:/Users/adrian/ownCloud/EDGAR-FOOD/202108/unc/unc.table_food.rdata")
-  
-  # From edgarfood_unc.r first lines after if(do.aggregate)
-  unc.table <- rbind(food=unc.table_foodshare, 
-  total=unc.total, fill = TRUE, idcol = TRUE)
-
-  unc.table <- unc.table[emi != 0]
-  unc.table[, sector := substr(ipcc06, 1, 1)]
-  unc.table[, CorrLevel := substr(ipcc06, 1, 3)]
-  unc.table[is.na(FOOD_system_stage), FOOD_system_stage := "TOTAL"]
-  unc.table[is.na(FOOD_system_stage_detailed), FOOD_system_stage_detailed := "TOTAL"]
-  unc.table[is.na(FOOD_system_compartment), FOOD_system_compartment := "TOTAL"]
-  unc.table[grepl("^1", ipcc06) & gas=="CO2", CorrLevel := substr(processes, 9, 11)]
-  setnames(unc.table, "FOOD_system_stage_detailed", "stage")
-  # ---> Ensure that all emissions are captured, define level of correlation generically
-  unc.table[is.na(CorrLevel), CorrLevel := sector]
-  
   save(unc.table, file="C:/Users/adrian/ownCloud/EDGAR-FOOD/202108/unc/unc.table_AR5.rdata")
+
+  # Load IPCC GWPs - EDGAR provided the data using AR5-GWP
+  # They need to be converted for AR6
+  ipccgwps <- data.table(read.xlsx(paste0(edgar_folder, "ipcc_ar6_data_edgar6_all_gases_gwp100.xlsx"), sheet = "100_yr_gwps"))
+  ipccgwpch4 <- data.table(read.xlsx(paste0(edgar_folder, "ipcc_ar6_data_edgar6_all_gases_gwp100.xlsx"), sheet = "CH4_gwps"))
+  ipccgwpch4 <- unique(ipccgwpch4[, .(ipcc=sector_code, gwp_ar6)])
+  
+  #For some categories there are 2 GWPs
+  ipccch4 <- unique(ipccgwpch4[, .(ipcc, gwp_ar6)])
+  ipccch4 <- ipccch4[, .(gwp_ar6 = mean(gwp_ar6)), by=.(ipcc)]
+  #assign manually the GWP values from the IPCC table & load mapped table
+  #write.xlsx(unique(uncch4[, .(ipcc06)]), file=paste0(edgar_folder, "ipcc06_gwpar6.xlsx")
+  ipccch4 <- as.data.table(read.xlsx(xlsxFile = paste0(edgar_folder, "ipcc06_gwpar6.xlsx"), sheet = "Sheet 1"))
+  #ipccch4 <- as.data.table(read.xlsx(xlsxFile = paste0(edgar_folder, "unc/IPCC96_2_IPCC06.xlsx"), sheet = "Sheet1"))
+  
+  uncgas <- merge(unc.table[gas!="CH4"],ipccgwps, by="gas", all.x = TRUE)
+  uncch4 <- merge(unc.table[gas=="CH4"], ipccch4[, .(ipcc06, gwp_ar6)], by = "ipcc06")
+  unc <- rbind(uncgas, uncch4)
   
   
+  #gwpsar5 <- c(28, 1, 265, 1, 0, 1, 1, 1)
+  unc[, gwp_ar5 := ifelse(gas=="CH4", 28, ifelse(gas=="N2O", 265, 1))]
+  unc[!is.na(gwp_ar6), `:=` (emi = emi / gwp_ar5 * gwp_ar6)]
   
+  unc.table <- unc
+  save(unc.table, file="C:/Users/adrian/ownCloud/EDGAR-FOOD/202108/unc/unc.table_AR6.rdata")
+  return(unc.table)
   
   
 }

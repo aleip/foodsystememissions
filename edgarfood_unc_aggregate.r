@@ -1,4 +1,4 @@
-agguncertainty <- function(unc.table, file.agg="unc_elements_aggregates.rdata"){
+aggsector <- function(unc.table, file.agg=paste0(edgar_folder, "unc/emi_country_gas_stage_g1.rdata")){
   
   # Stepwise aggregation. 
   # First aggregate up to the level of correlation (uncorr influences if sub-categories are
@@ -16,6 +16,18 @@ agguncertainty <- function(unc.table, file.agg="unc_elements_aggregates.rdata"){
     ), by=.(.id, country, stage, gas, CorrLevel, sector)]
   print(emi_country_gas_stage_g1[, sum(emi, na.rm = TRUE), by = .(.id)][])
   
+  save(emi_country_gas_stage_g1, file=file.agg)
+  return(emi_country_gas_stage_g1)
+  
+  
+}
+agguncertainty <- function(emi_country_gas_stage_g1, file.agg="unc_elements_aggregates.rdata"){
+  
+  # Stepwise aggregation. 
+  # First aggregate up to the level of correlation (uncorr influences if sub-categories are
+  #       correlated or un-correlated)
+  # Second, aggregation 'above' correlation level (thus always non-correlation assumed)
+  # Third step is to calculate asymmetric distributions for high uncertainly levels
   
   #
   # ---> Steps 2a: Aggregation over countries - emissions are correlated by corrlevel
@@ -28,6 +40,8 @@ agguncertainty <- function(unc.table, file.agg="unc_elements_aggregates.rdata"){
                                  unc.max=f.aggregate_subcategory(emi = emi, unc = as.numeric(unc.max), uncorr = uncorr, xFlag = xFlag)
     ), by = .(.id, stage, gas, sector, CorrLevel)]
   print(emi_gas_stage_sector_corrlevel[, sum(emi, na.rm = TRUE), by = .(.id)][])
+  emi_gas_stage_sector_corrlevel[is.nan(unc.min), `:=` (unc.min=0, unc.max=0)] 
+  
   
   #
   # ---> Steps 2b: Aggregation without correlated emissions
@@ -110,7 +124,7 @@ agguncertainty <- function(unc.table, file.agg="unc_elements_aggregates.rdata"){
   emi$sector <- "TOTAL"
   emi$gas <- "GHG"
   emi$stage <- "TOTAL"
-  emi <- rbind(emi_gas_stage_sector, 
+  emiall <- rbind(emi_gas_stage_sector, 
                emi_gas_stage, 
                emi_gas_sector,
                emi_sector_stage,
@@ -119,10 +133,11 @@ agguncertainty <- function(unc.table, file.agg="unc_elements_aggregates.rdata"){
                emi_gas, 
                emi)
   
-  emi <- emi[emi != 0]
-  emi <- unique(emi)
+  emiall <- emiall[emi != 0]
+  emiall <- unique(emiall)
   
-  save(emi_country_gas_stage_g1, emi_gas_stage_sector_corrlevel, emi, file=file.agg)
-  return(list(emi_country_gas_stage_g1, emi))
+  save(emi_country_gas_stage_g1, emi_gas_stage_sector_corrlevel, emiall, file=file.agg)
+  return(list(emi_country_gas_stage_g1, 
+              emiall))
   
 }
